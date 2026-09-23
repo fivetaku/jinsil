@@ -197,8 +197,10 @@ export async function run(argv) {
         console.log('자동 제출: 켜짐 — 서버에는 구간 계산값(게이지 변화·토큰 합계·요금제)만 갑니다. 프롬프트·응답·인증값·이메일은 보내지 않습니다. (끄기: jinsil submit --auto off)');
       }
       if (!flags['no-login']) await login(flags);
-      if (cmd && !cmd.onPath) console.log(`새 터미널을 열면 \`jinsil claude\`를 쓸 수 있습니다. 이 터미널에서는 \`source ${cmd.rc[0]}\` 후 사용하세요.`);
-      else console.log('이제 `jinsil claude`로 Claude Code를 사용하세요.');
+      const names = cmd?.aliases?.length ? cmd.aliases.map(a => a.replace(/^alias\s+/, '').replace(/=.*$/, '')) : [];
+      console.log(`\n설치 끝. 이제 평소처럼 ${names.length ? names.join(' · ') : 'claude'} 로 Claude Code를 쓰면 기록·제출이 자동입니다.`);
+      if (cmd) console.log(`새 터미널을 열거나, 이 터미널에서 \`source ${cmd.rc[0]}\` 를 한 번 실행하세요(별칭 적용).`);
+      console.log('상태 확인: jinsil status · 내 결과: https://jinsil.axwith.com/me');
       return 0;
     }
     case 'claude': return claude(flags, rest);

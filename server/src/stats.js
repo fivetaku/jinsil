@@ -117,7 +117,9 @@ export async function publicStats(env) {
     .map(a => ({ rank: a.rank, tag: a.tag, value_multiple: a.value_multiple, usd_per_100pct: a.usd_per_100pct, weekly_pct: a.weekly_pct }));
   const { baseline, stickers: st } = stickers(plans);
   const priceVer = await env.DB.prepare('SELECT COUNT(*) AS n FROM prices WHERE verified_at IS NULL').first();
-  return { plans, ranking, stickers: st, baseline, price_status: priceVer.n ? 'provisional' : 'verified',
+  // 측정 중: 활성 기기를 연결한 사람·PC 수(제출 전 포함). 요금제별 공개 기준(제출 계정 수)과는 별개.
+  const measuring = await env.DB.prepare('SELECT COUNT(DISTINCT user_id) AS users, COUNT(*) AS devices FROM devices WHERE revoked_at IS NULL').first();
+  return { plans, ranking, stickers: st, baseline, measuring: { users: measuring.users, devices: measuring.devices }, price_status: priceVer.n ? 'provisional' : 'verified',
     note: '매주 100%를 다 썼을 때의 이론적 상한 · API 정가 환산' };
 }
 

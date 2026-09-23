@@ -17,8 +17,9 @@ a{color:inherit}.wrap{max-width:1200px;margin:0 auto;padding:0 24px}
 .btn{display:inline-block;background:#FFD400;color:#111;font-weight:800;border:0;border-radius:6px;padding:9px 16px;font-size:14px;text-decoration:none;cursor:pointer}
 .btn.dark{background:#111;color:#fff}.btn.ghost{background:#fff;border:2px solid #111}
 .band{background:#FFD400;border-bottom:4px solid #111}.band h1{margin:0;padding:28px 0 22px;font-size:clamp(34px,7vw,84px);font-weight:900;letter-spacing:-3px;line-height:1;text-align:center}
-.band .join{margin:0;padding:0 0 22px;text-align:center;font-size:clamp(15px,1.9vw,20px);font-weight:800;letter-spacing:-.3px}
+.band .join{word-break:keep-all;margin:0;padding:0 0 22px;text-align:center;font-size:clamp(15px,1.9vw,20px);font-weight:800;letter-spacing:-.3px}
 .band .join code{background:#111;color:#FFD400;font-size:.95em;padding:4px 10px;border-radius:6px;font-weight:700}
+.band .live{word-break:keep-all;margin:-12px 0 0;padding:0 0 20px;text-align:center;font-size:14px;font-weight:600}.band .live b{font-weight:900}
 .band .join a{font-weight:600;font-size:.8em;margin-left:8px;opacity:.75}
 .lead{display:flex;align-items:baseline;gap:18px;flex-wrap:wrap;margin:34px 0 18px}.lead h2{margin:0;font-size:clamp(26px,3.6vw,40px);font-weight:900;letter-spacing:-1.5px}
 .lead h2 mark{background:linear-gradient(transparent 55%,#FFD400 55%);color:inherit}.lead p{margin:0;color:#555;font-size:14px}
@@ -94,7 +95,7 @@ export async function home(req, env) {
     <td>${esc(PLAN_LABEL[r.plan] || '미확인')}</td><td>${gaugeLabel(r.gauge)} ${esc(r.range)}</td><td class="num">${esc(r.display)}</td></tr>`).join('')
     : '<tr><td colspan="5" class="note">아직 제출된 구간이 없습니다.</td></tr>';
   return html(layout('클진요 — 클로드에게 진실을 요구합니다', `
-<section class="band"><div class="wrap"><h1>클로드에게 진실을 요구합니다</h1><p class="join">터미널에서 <code>npx jinsil setup</code> 으로 클진요를 설치한 뒤 Claude Code를 사용해 주세요 <a href="/methodology">어떻게 계산하나요?</a></p></div></section>
+<section class="band"><div class="wrap"><h1>클로드에게 진실을 요구합니다</h1><p class="join">터미널에서 <code>npx jinsil setup</code> 으로 클진요를 설치한 뒤 Claude Code를 사용해 주세요 <a href="/methodology">어떻게 계산하나요?</a></p><p class="live">지금 <b>${s.measuring.users}명</b>이 PC ${s.measuring.devices}대에서 측정 중 · 게이지가 오른 구간부터 자동 제출</p></div></section>
 <main class="wrap" id="stats">
   <div class="lead"><h2>구독료 <mark>1달러로</mark> 얼마나 쓸 수 있나</h2><p>${esc(s.note)}${s.price_status === 'provisional' ? ' · 단가 잠정' : ''}</p></div>
   <div class="cards">${plans.map(p => planCard(p, s.stickers, best)).join('')}</div>
