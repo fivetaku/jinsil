@@ -3,10 +3,28 @@
   "version": "0.1.0",
   "description": "클진요 — 클로드에게 진실을 요구합니다. Claude 구독 한도를 내 PC에서 측정하고 계산값만 제출합니다.",
   "type": "module",
-  "bin": { "jinsil": "bin/jinsil.mjs" },
-  "files": ["bin/", "src/", "README.md"],
-  "engines": { "node": ">=20" },
+  "bin": {
+    "jinsil": "bin/jinsil.mjs"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "license": "MIT",
+  "homepage": "https://jinsil.axwith.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fivetaku/jinsil.git",
+    "directory": "cli"
+  },
+  "bugs": {
+    "url": "https://github.com/fivetaku/jinsil/issues"
+  },
   "scripts": {
     "test": "node --test test/*.test.mjs && node test/verify-local.mjs"
   }
