@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { home, dataDir, appDir } from './paths.mjs';
 import { loadConfig, saveConfig, loadDevice, saveDevice, removeDevice, ensureHome, DEFAULT_PORT } from './config.mjs';
 import * as service from './service.mjs';
+import * as shell from './shell.mjs';
 import { submit, pendingIntervals, CLIENT_VERSION } from './submit.mjs';
 import { readLedgerDir, computeIntervals, localCost } from './interval.mjs';
 
@@ -149,7 +150,7 @@ async function claude(flags, rest) {
 }
 
 const HELP = `jinsil ${VERSION} — 클진요 (클로드에게 진실을 요구합니다)
-  jinsil setup [--server URL] [--port N] [--no-login]   기록기 설치·서비스 등록·이 PC 연결
+  jinsil setup [--server URL] [--port N] [--no-login] [--no-path] 기록기 설치·서비스 등록·이 PC 연결
   jinsil claude [claude 인수...]                         기록기를 거쳐 Claude Code 실행
   jinsil status | report                                 상태 / 로컬 계산 결과
   jinsil submit [--yes] [--dry-run] [--auto on|off]      구간 제출(첫 회는 미리보기·동의)
@@ -183,8 +184,14 @@ export async function run(argv) {
         if (!h) throw Error('recorder_start_failed');
         console.log(`기록기 동작 확인: 127.0.0.1:${port}`);
       }
+      let cmd = null;
+      if (!flags['no-path']) {
+        cmd = shell.installCommand({ entry });
+        console.log(`명령 등록: ${cmd.shim}${cmd.changed.length ? ` (PATH 추가: ${cmd.changed.join(', ')})` : ''}`);
+      }
       if (!flags['no-login']) await login(flags);
-      console.log('이제 `jinsil claude`로 Claude Code를 사용하세요.');
+      if (cmd && !cmd.onPath) console.log(`새 터미널을 열면 \`jinsil claude\`를 쓸 수 있습니다. 이 터미널에서는 \`source ${cmd.rc[0]}\` 후 사용하세요.`);
+      else console.log('이제 `jinsil claude`로 Claude Code를 사용하세요.');
       return 0;
     }
     case 'claude': return claude(flags, rest);
@@ -211,6 +218,7 @@ export async function run(argv) {
     }
     case 'uninstall': {
       service.uninstall();
+      shell.uninstallCommand();
       fs.rmSync(path.join(home(), 'app'), { recursive: true, force: true });
       if (flags.purge) {
         const d = loadDevice();

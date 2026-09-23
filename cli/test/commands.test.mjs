@@ -110,3 +110,29 @@ function runAsync(args, env, input) {
     if (input !== undefined) c.stdin.end(input); else c.stdin.end();
   });
 }
+
+test('setup은 jinsil 명령을 PATH에 등록하고(중복 없이), uninstall은 되돌리며 기존 셸 설정은 보존한다', () => {
+  const { d, env } = sandbox();
+  const rc = path.join(d, 'zshrc');
+  fs.writeFileSync(rc, 'export FOO=1\nalias ll="ls -l"\n');
+  const e = { ...env, JINSIL_RC_FILES: rc };
+  const out = run(['setup', '--no-login', '--port', '10298'], e);
+  assert.match(out, /명령 등록: .*bin\/jinsil/);
+  const shim = path.join(d, 'home', 'bin', 'jinsil');
+  assert.equal(fs.statSync(shim).mode & 0o111, 0o111);
+  const version = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url))).version;
+  assert.equal(execFileSync(shim, ['--version'], { env: e, encoding: 'utf8' }).trim(), version);
+  run(['setup', '--no-login', '--port', '10298'], e);
+  const text = fs.readFileSync(rc, 'utf8');
+  assert.equal(text.split('# >>> jinsil >>>').length - 1, 1);
+  assert.ok(text.startsWith('export FOO=1\nalias ll="ls -l"\n') && text.includes(`export PATH="${path.join(d, 'home', 'bin')}":"$PATH"`));
+  const zsh = execFileSync('/bin/sh', ['-c', `. "${rc}" && command -v jinsil`], { encoding: 'utf8' }).trim();
+  assert.equal(zsh, shim);
+  run(['uninstall'], e);
+  assert.ok(!fs.existsSync(shim));
+  assert.equal(fs.readFileSync(rc, 'utf8'), 'export FOO=1\nalias ll="ls -l"\n');
+  const { d: d2, env: env2 } = sandbox();
+  const rc2 = path.join(d2, 'zshrc');
+  run(['setup', '--no-login', '--no-path', '--port', '10297'], { ...env2, JINSIL_RC_FILES: rc2 });
+  assert.ok(!fs.existsSync(rc2) && !fs.existsSync(path.join(d2, 'home', 'bin')));
+});
