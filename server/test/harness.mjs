@@ -53,9 +53,9 @@ export async function csrfOf(base, cookie, pathname) {
   return /name="csrf" value="([^"]+)"/.exec(t)?.[1];
 }
 // CLI 기기 코드 흐름 전체
-export async function linkDevice(base, cookie, { approve = true } = {}) {
+export async function linkDevice(base, cookie, { approve = true, name = `test-mac-${crypto.randomUUID().slice(0, 8)}` } = {}) {
   const c = await (await fetch(`${base}/device/code`, { method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ name: 'test-mac', os: 'darwin-arm64', client_version: '0.1.0' }) })).json();
+    body: JSON.stringify({ name, os: 'darwin-arm64', client_version: '0.1.0' }) })).json();
   const pending = await fetch(`${base}/device/token`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ device_code: c.device_code }) });
   const csrf = await csrfOf(base, cookie, `/link?code=${c.user_code}`);
   const form = new URLSearchParams({ csrf, user_code: c.user_code, action: approve ? 'approve' : 'deny' });

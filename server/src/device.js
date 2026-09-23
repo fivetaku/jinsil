@@ -30,6 +30,9 @@ export async function token(req, env) {
   // 1회용: 토큰 발급과 동시에 코드 삭제
   await env.DB.batch([
     env.DB.prepare('DELETE FROM device_codes WHERE device_code_hash = ?').bind(h),
+    // 같은 사용자가 같은 PC(호스트명·OS)를 다시 연결하면 예전 연결을 대체한다 — setup 재실행으로 PC가 여러 대로 잡히지 않게.
+    env.DB.prepare('UPDATE devices SET revoked_at = ? WHERE user_id = ? AND name = ? AND os = ? AND revoked_at IS NULL')
+      .bind(Date.now(), row.approved_user_id, meta.name, meta.os),
     env.DB.prepare('INSERT INTO devices (id, user_id, token_hash, name, os, client_version, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
       .bind(id, row.approved_user_id, await sha256(deviceToken), meta.name, meta.os, meta.client_version, Date.now()),
   ]);

@@ -89,6 +89,19 @@ test('폐기한 기기의 제출은 401', async () => {
   assert.equal(r.status, 401);
 });
 
+test('같은 PC를 다시 연결하면 예전 연결은 해제되어 한 대로 잡힌다', async () => {
+  const carol = await login(srv.base, 'carol-relink');
+  const first = (await linkDevice(srv.base, carol, { name: 'carol-mac' })).token.device_token;
+  const before = (await (await fetch(`${srv.base}/api/stats`)).json()).measuring;
+  const second = (await linkDevice(srv.base, carol, { name: 'carol-mac' })).token.device_token;
+  const after = (await (await fetch(`${srv.base}/api/stats`)).json()).measuring;
+  assert.equal(after.devices, before.devices, 'PC 수가 늘지 않아야 함');
+  assert.equal((await post(srv.base, first, interval({ account_fp: fp('c1') }))).status, 401);
+  assert.notEqual((await post(srv.base, second, interval({ account_fp: fp('c1') }))).status, 401);
+  await linkDevice(srv.base, carol, { name: 'carol-laptop' });
+  assert.equal((await (await fetch(`${srv.base}/api/stats`)).json()).measuring.devices, after.devices + 1, '다른 PC는 따로 셈');
+});
+
 test('가성비 배수·요금제 순위·스티커(기준 Max 5x)·이상치 제외', async () => {
   // Max 5x 4계정: 주간 3%p씩. 비용 $6×(개수) — 1%당 $6/2=3 → 100% $300 ... 계정마다 다르게
   const five = [['5', 2], ['6', 3], ['7', 4], ['8', 400]]; // '8'은 극단값 → 이상치
