@@ -91,6 +91,18 @@ function planCard(p, sticks, bestPlan) {
     <div class="bd">${body}<div class="stickers">${s}</div></div></div>`;
 }
 
+const AUX_KO = { input: '입력', output: '출력', cache_read: '캐시 읽기', cache_write: '캐시 쓰기' };
+function auxPanel(a) {
+  if (!a?.computed_at) return '<p class="muted">측정 대기 — 첫 계산은 매일 03:17(UTC) 집계 때 이뤄집니다. 5시간 창 30개·계정 5개 이상이면 추정값을 공개합니다.</p>';
+  const w = a.weights || {}, lag = a.lag || {};
+  const weights = w.status === 'ok'
+    ? `<table><tr><th>성분</th><th>상대 가중치</th><th>비용 비중</th></tr>${Object.keys(AUX_KO).map(k => `<tr><td>${AUX_KO[k]}</td><td class="num">${w.relative[k].toFixed(2)}</td><td class="num">${a.composition ? (a.composition[k] * 100).toFixed(0) + '%' : '—'}</td></tr>`).join('')}</table>
+       <p class="note">창 ${w.windows}개 · 계정 ${w.accounts}개 · 설명력 R² ${w.r2 === null ? '—' : w.r2.toFixed(2)}</p>`
+    : `<p class="muted">측정 대기 — 5시간 창 ${w.min_windows ?? 30}개·계정 ${w.min_accounts ?? 5}개 이상 모이면 추정합니다(현재 창 ${w.windows ?? 0}개·계정 ${w.accounts ?? 0}개).</p>`;
+  const lagTxt = lag.status === 'ok' ? `게이지 반영 지연 추정: 중앙값 약 ${lag.median_min}분 (창 ${lag.windows}개)` : `게이지 반영 지연: 측정 대기 (창 ${lag.windows ?? 0}/${lag.min_windows ?? 10})`;
+  return `${weights}<p class="note">${lagTxt}</p>`;
+}
+
 export async function home(req, env) {
   const [s, f, user] = await Promise.all([publicStats(env), feed(env, 20), currentUser(req, env)]);
   const plans = ['pro', 'max5x', 'max20x'].map(k => s.plans[k]);
@@ -131,6 +143,8 @@ export async function home(req, env) {
     <p class="note">순위가 낮을수록 같은 구독료로 한도를 더 빨리 쓰는 사용 패턴입니다(모델·캐시 구성에 따라 달라짐). 익명 태그만 공개합니다.</p></div>
   <div class="tab">통계에서 뺀 창</div><div class="panel"><table><tr><th>요금제</th><th>사유별 창 수</th></tr>${excl}</table>
     <p class="note">제외 기준은 값을 보기 전에 정한 규칙만 씁니다(외부 사용 의심·요금제 변경·비표준 토큰·중복 수집·게이지 상승 5%p 미만).</p></div>
+  <div class="tab">보조 지표 · 토큰 종류별 게이지 가중치</div><div class="panel">${auxPanel(s.aux)}
+    <p class="note">요금제 값 계산에는 쓰지 않는 보조 지표입니다. 5시간 창마다 게이지 상승을 성분별 API 정가 비용으로 회귀해, 게이지가 각 토큰을 정가 비율보다 무겁게(1보다 큼) 또는 가볍게 세는지 추정합니다. 하루 한 번 갱신.</p></div>
   <div class="tab">참여 로그</div><div class="panel"><div class="feeds"><div><h3>주간 게이지</h3>${feedTable('7d')}</div><div><h3>5시간 게이지</h3>${feedTable('5h')}</div></div>
     <p class="note">한도 창 단위로 갱신됩니다. 새 계정은 ${esc(env.PROBATION_HOURS ?? 24)}시간 검증 후 통계에 반영됩니다.</p></div>
 </main>`, { user }), 200, { 'cache-control': 'no-store' });
@@ -145,6 +159,8 @@ export async function methodology(req, env) {
 <h2>주간 100%와 가성비</h2><p>계정별 (Σ비용 ÷ Σ게이지 상승) × 100이 <b>주간 100% 환산액</b>입니다. 요금제별 계정 값의 <b>중앙값</b>(계정당 한 표)에 × 30/7(30일 환산) = 30일 가치, ÷ 월 구독료 = <b>가성비 배수</b>입니다. 매주 100%를 다 썼을 때의 이론적 상한이며 실제 청구액이 아닙니다.</p>
 <h2>통계에서 빼는 것</h2><p>값의 크기로는 빼지 않고, 미리 정한 원인만 뺍니다: 로컬 사용 없이 게이지가 오른 창(외부 사용 의심), 창 도중 요금제 변경, fast 모드·서버 도구 등 표준 요금이 아닌 토큰, 캐시 보관 시간 미확인, 두 PC가 똑같은 기록을 낸 창(중복 수집 의심), 게이지 상승 5%p 미만. 계정 사이에서는 요금제 안 분포의 사분위범위 3배 밖 값(측정 오류 방어)과 신규 계정 첫 ${esc(env.PROBATION_HOURS ?? 24)}시간을 뺍니다. 공개는 요금제별 ${esc(env.MIN_ACCOUNTS ?? 5)}계정 이상일 때만, 5시간 지표는 따로 표본 수를 셉니다.</p>
 <h2>게이지 가중치는 정가 비율과 다르다</h2><p>09-23 실측에서 같은 계정의 5시간 창 1%당 값이 창마다 ±50~80% 흔들렸고, 캐시 읽기 비중이 높을수록 1%당 값이 올라가고(상관 +0.57) Sonnet 비중이 높을수록 내려갔습니다(−0.47). 게이지가 토큰 종류를 API 정가와 다른 비율로 센다는 뜻이라, 요금제 비교에는 참여자들의 사용 구성이 섞입니다.</p>
+<h2>보조 지표: 토큰 종류별 가중치와 반영 지연</h2><p>5시간 창마다 Δ게이지 ≈ w<sub>입력</sub>·C<sub>입력</sub> + w<sub>출력</sub>·C<sub>출력</sub> + w<sub>캐시 읽기</sub>·C<sub>캐시 읽기</sub> + w<sub>캐시 쓰기</sub>·C<sub>캐시 쓰기</sub>(C는 성분별 API 정가 비용)로 놓고 절편 없는 최소제곱으로 w를 구합니다. 공개값은 전체 평균(ΣΔ÷ΣC) 대비 상대 가중치로, 1보다 크면 게이지가 그 성분을 정가 비율보다 무겁게 센다는 뜻입니다. 5시간 창 30개·계정 5개 미만이면 공개하지 않습니다. 반영 지연은 창마다 0~30분(5분 간격) 지연을 시험해 누적 비용이 게이지 곡선에 가장 잘 맞는 값을 고르고, 그 중앙값을 냅니다. 둘 다 요금제 값 계산에는 쓰지 않습니다.</p>
+<h2>프록시 모드와 무개입 수집</h2><p>기본 수집기는 대화 파일만 읽습니다(요청 경로 무개입). 여러 계정을 번갈아 쓰는 계정 풀 사용자는 대화 파일만으로 어느 계정의 사용인지 알 수 없어, <code>jinsil setup --proxy</code>로 로컬 기록기를 풀의 upstream으로 지정해 응답 헤더로 계정을 가립니다. 두 방식의 값은 같은 창 계산기로 계산하며, 창마다 어떤 수집기로 모았는지 증거 묶음에 남습니다.</p>
 <h2>한계</h2><p>참여자가 제출한 값의 진위를 서버가 증명할 방법은 없습니다(참여자 로컬 관측값). 계정 풀·라우터 사용은 기본 집계에서 빠지고, claude.ai 웹·앱 사용은 보이지 않습니다. 단가는 공식 확인 전 잠정값이며, 쓴 단가표는 해시로 남겨 다시 계산할 수 있습니다.</p>
 <h2>개인정보</h2><p>프롬프트·응답 본문, 파일 경로, 요청 ID, 호스트명, 이메일, 인증값은 서버로 보내지 않습니다. 서버에는 5분 단위 모델별 토큰 합계, 게이지 값, Claude 계정의 해시 지문, 요금제 등급이 갑니다(5분 단위 시각 포함). 공개 화면에는 지문 끝 4자리만 보입니다. 로그인 토큰은 <code>api.anthropic.com</code>에만 보냅니다.</p></main>`, { user }));
 }

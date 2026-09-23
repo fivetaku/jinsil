@@ -5,7 +5,9 @@
 // - 표기: 참여자가 로컬에서 관측해 제출한 값(서버는 진위를 검증하지 못함).
 import { WEEKS_PER_MONTH } from './util.js';
 import { planOf, PLAN_LABEL } from '../../cli/src/tiers.mjs';
-import { STAGES } from '../../cli/src/window.mjs';
+import { STAGES, BIN_MS } from '../../cli/src/window.mjs';
+import { priceTable } from './intervals.js';
+import { fitWeights, composition, bestLag, lagSummary, WEIGHT_KEYS } from './weights.js';
 
 export const PLANS = ['pro', 'max5x', 'max20x', 'team_standard', 'team_premium'];
 const ADVERT_GAP = 0.8;
@@ -139,7 +141,7 @@ export function stickers(plans) {
 }
 
 export async function publicStats(env) {
-  const [prices, list, excl] = await Promise.all([planPrices(env), accountStats(env), exclusionCounts(env)]);
+  const [prices, list, excl, aux] = await Promise.all([planPrices(env), accountStats(env), exclusionCounts(env), latestAux(env)]);
   const plans = planStats(list, env, prices, excl);
   const ranking = {};
   for (const plan of PLANS) ranking[plan] = !plans[plan].shown ? [] : list.filter(a => a.plan === plan && a.eligible).sort((a, b) => a.rank - b.rank)
@@ -148,6 +150,7 @@ export async function publicStats(env) {
   const priceVer = await env.DB.prepare('SELECT COUNT(*) AS n FROM prices WHERE verified_at IS NULL').first();
   const measuring = await env.DB.prepare('SELECT COUNT(DISTINCT user_id) AS users, COUNT(*) AS devices FROM devices WHERE revoked_at IS NULL').first();
   return { plans, ranking, stickers: st, baseline, measuring: { users: measuring.users, devices: measuring.devices }, price_status: priceVer.n ? 'provisional' : 'verified',
+    aux: aux || { gauge: '5h', weights: { status: 'waiting', relative: null }, composition: null, lag: { status: 'waiting', median_min: null }, computed_at: null },
     note: '참여자가 로컬에서 관측해 제출한 값 · 매주 100%를 다 썼을 때의 이론적 상한 · API 정가 환산' };
 }
 
@@ -190,6 +193,43 @@ export async function me(env, userId) {
   return { accounts, windows: windows.map(({ account_fp, ...w }) => w), devices, plans };
 }
 
+// M5 보조 지표 계산(일 1회 cron). 5시간 창만 쓴다(주간과 %p 척도가 달라 섞지 않는다). 제외·미확정 비용 창은 뺀다.
+export async function computeAux(env, now = Date.now()) {
+  const since = now - 30 * 86400000;
+  const { table } = await priceTable(env);
+  const { results: ws } = await env.DB.prepare(`SELECT account_fp, t_base, t_end, delta FROM windows
+    WHERE gauge = '5h' AND exclude_reason IS NULL AND stage IS NOT NULL AND cost IS NOT NULL AND t_end > ?`).bind(since).all();
+  const rows = [], lags = [];
+  for (const w of ws) {
+    const [{ results: bins }, { results: samples }] = await Promise.all([
+      env.DB.prepare('SELECT * FROM usage_bins WHERE account_fp = ? AND bin_start >= ? AND bin_start <= ?').bind(w.account_fp, w.t_base - BIN_MS, w.t_end).all(),
+      env.DB.prepare(`SELECT observed_at, MAX(utilization) AS u FROM gauge_samples WHERE account_fp = ? AND gauge = '5h' AND observed_at BETWEEN ? AND ?
+        GROUP BY observed_at ORDER BY observed_at`).bind(w.account_fp, w.t_base, w.t_end).all(),
+    ]);
+    const parts = Object.fromEntries(WEIGHT_KEYS.map(k => [k, 0]));
+    const perBin = new Map();
+    let priced = true;
+    for (const b of bins) {
+      const p = table[b.model];
+      if (!p || b.cache_write_unknown > 0 || ['input', 'output', 'cache_read', 'cache_write_5m', 'cache_write_1h'].some(c => p[c] === undefined)) { priced = false; break; }
+      const c = { input: b.input * p.input, output: b.output * p.output, cache_read: b.cache_read * p.cache_read,
+        cache_write: b.cache_write_5m * p.cache_write_5m + b.cache_write_1h * p.cache_write_1h };
+      for (const k of WEIGHT_KEYS) parts[k] += c[k] / 1e6;
+      const t = b.bin_start + BIN_MS; // bin 끝 시각에 비용이 쌓였다고 본다
+      perBin.set(t, (perBin.get(t) || 0) + WEIGHT_KEYS.reduce((s, k) => s + c[k], 0) / 1e6);
+    }
+    if (!priced) continue;
+    rows.push({ account: w.account_fp, delta: w.delta, parts });
+    lags.push(bestLag(samples.map(s => [s.observed_at, s.u]), [...perBin]));
+  }
+  return { gauge: '5h', weights: fitWeights(rows), composition: composition(rows), lag: lagSummary(lags), computed_at: new Date(now).toISOString().slice(0, 10) };
+}
+
+export async function latestAux(env) {
+  const r = await env.DB.prepare(`SELECT weights_json FROM stats_daily WHERE plan = 'all' AND gauge = 'aux' ORDER BY date DESC LIMIT 1`).first();
+  return r ? JSON.parse(r.weights_json) : null;
+}
+
 export async function snapshot(env) {
   const [prices, list, excl] = await Promise.all([planPrices(env), accountStats(env), exclusionCounts(env)]);
   const plans = planStats(list, env, prices, excl);
@@ -197,5 +237,7 @@ export async function snapshot(env) {
   const stmts = Object.values(plans).map(p => env.DB.prepare(`INSERT OR REPLACE INTO stats_daily (date, plan, gauge, n_accounts, n_intervals,
     mean_usd_per_100pct, min, max, p25, p75, monthly_value_usd, value_multiple, weights_json) VALUES (?, ?, '7d', ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)`)
     .bind(date, p.plan, p.n, p.median_usd_per_100pct, p.range_lo, p.range_hi, p.p25, p.p75, p.monthly_value, p.value_multiple, JSON.stringify({ stages: p.stages, exclusions: p.exclusions })));
+  const aux = await computeAux(env);
+  stmts.push(env.DB.prepare(`INSERT OR REPLACE INTO stats_daily (date, plan, gauge, weights_json) VALUES (?, 'all', 'aux', ?)`).bind(date, JSON.stringify(aux)));
   await env.DB.batch(stmts);
 }

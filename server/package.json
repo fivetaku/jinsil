@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "wrangler dev --local",
     "migrate:local": "wrangler d1 migrations apply DB --local",
-    "test": "node --test --test-concurrency=1 test/api.test.mjs test/bins.test.mjs",
+    "test": "node --test --test-concurrency=1 test/weights.test.mjs test/api.test.mjs test/bins.test.mjs",
     "test:web": "node --test test/web.test.mjs",
     "screenshots": "node test/screenshots.mjs"
   },

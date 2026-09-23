@@ -39,7 +39,7 @@ export async function build(env, plan) {
       }
       windows.push({ gauge: w.gauge, state: w.state, stage: w.stage, exclude_reason: w.exclude_reason, g_base: w.g_base, g_end: w.g_end, delta: w.delta,
         duration_min: rel(w.t_end, w.t_base), cost: r6(w.cost), cost_lo: r6(w.cost_lo), cost_hi: r6(w.cost_hi), usd_per_pct: r6(w.usd_per_pct),
-        price_version: w.price_version, calc_version: w.calc_version,
+        price_version: w.price_version, calc_version: w.calc_version, collectors: w.collectors,
         samples: samples.map(s => [rel(s.observed_at, w.t_base), s.u]), bins: [...perBin].map(([k, c]) => [k, r6(c)]) });
     }
     accounts.push({ tag: a.tag, stage: a.stage, usd_per_100pct: r6(a.usd_per_100pct), range_lo: r6(a.range_lo), range_hi: r6(a.range_hi), windows });

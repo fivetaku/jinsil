@@ -159,3 +159,16 @@ test('내 데이터 삭제 후 통계·순위에서 빠지고, 기기 토큰도 
   assert.ok(!(await stats()).ranking.max5x.some(r => r.tag === '9999'));
   assert.equal((await postBins(srv.base, tok, windowPayload({ fp: fp('9') }))).status, 401);
 });
+
+test('일 1회 스냅샷이 보조 지표(가중치·지연)를 저장하고 /api/stats에 싣는다 — 표본 미달이면 측정 대기', async () => {
+  const before = (await stats()).aux;
+  assert.equal(before.computed_at, null);
+  assert.equal((await fetch(`${srv.base}/__scheduled?cron=17+3+*+*+*`)).status, 200);
+  const a = (await stats()).aux;
+  assert.match(a.computed_at, /^\d{4}-\d\d-\d\d$/);
+  assert.equal(a.gauge, '5h');
+  assert.equal(a.weights.status, 'waiting'); assert.equal(a.weights.relative, null);
+  assert.ok(a.weights.windows >= 1, '5시간 창이 회귀 입력으로 잡힘');
+  assert.equal(a.composition, null, '계정 5개 미만이면 구성 비공개');
+  assert.equal(a.lag.status, 'waiting');
+});
