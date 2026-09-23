@@ -1,0 +1,6 @@
+# 로컬 개발용(복사해 .dev.vars로). 실제 Google 비밀값을 여기에 넣지 않는다.
+DEV_IDP=1
+GOOGLE_CLIENT_ID=dev-client
+GOOGLE_AUTH_URL=/dev-idp/authorize
+GOOGLE_TOKEN_URL=/dev-idp/token
+PROBATION_HOURS=0

@@ -2,12 +2,18 @@
   "name": "jinsil-monorepo",
   "private": true,
   "type": "module",
-  "workspaces": ["cli", "server"],
+  "workspaces": [
+    "cli",
+    "server"
+  ],
   "scripts": {
     "test:interval": "node --test cli/test/interval.test.mjs",
     "test:server": "npm run test --workspace server",
     "test:web": "npm run test:web --workspace server",
     "screenshots": "npm run screenshots --workspace server",
     "e2e:check": "node scripts/e2e-check.mjs"
+  },
+  "allowScripts": {
+    "workerd@1.20260921.1": true
   }
 }
