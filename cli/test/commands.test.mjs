@@ -23,7 +23,7 @@ test('setup은 고정 런타임을 복사하고 서비스 파일을 쓰며, unin
   const { d, env } = sandbox();
   const out = run(['setup', '--no-login', '--port', '10299'], env);
   assert.match(out, /서비스: (launchd|systemd)/);
-  const app = path.join(d, 'home', 'app', '0.1.0');
+  const app = path.join(d, 'home', 'app', JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url))).version);
   assert.ok(fs.existsSync(path.join(app, 'bin', 'jinsil.mjs')));
   assert.ok(fs.existsSync(path.join(app, 'src', 'recorder.mjs')));
   const cfg = JSON.parse(fs.readFileSync(path.join(d, 'home', 'config.json'), 'utf8'));

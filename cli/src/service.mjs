@@ -52,13 +52,26 @@ WantedBy=default.target
 `;
 }
 
+const sleepMs = ms => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+
 export function install({ node = process.execPath, entry, port }) {
   if (process.platform === 'darwin') {
     fs.mkdirSync(agentsDir(), { recursive: true });
     const p = plistPath();
-    if (!dry()) { try { execFileSync('/bin/launchctl', ['bootout', `gui/${process.getuid()}/${LABEL}`], { stdio: 'ignore' }); } catch {} }
+    const target = `gui/${process.getuid()}/${LABEL}`;
+    if (!dry()) { try { execFileSync('/bin/launchctl', ['bootout', target], { stdio: 'ignore' }); } catch {} }
     fs.writeFileSync(p, plistContent({ node, entry, port }), { mode: 0o644 });
-    if (!dry()) execFileSync('/bin/launchctl', ['bootstrap', `gui/${process.getuid()}`, p], { stdio: 'ignore' });
+    if (!dry()) {
+      // bootout은 비동기로 끝난다. 이전 인스턴스가 사라지기 전에 bootstrap하면 실패(재실행 시 경합)하므로 기다렸다가 재시도한다.
+      const loaded = () => { try { execFileSync('/bin/launchctl', ['print', target], { stdio: 'ignore' }); return true; } catch { return false; } };
+      for (let i = 0; i < 50 && loaded(); i++) sleepMs(100);
+      let last;
+      for (let i = 0; i < 5; i++) {
+        try { execFileSync('/bin/launchctl', ['bootstrap', `gui/${process.getuid()}`, p], { stdio: 'ignore' }); last = null; break; }
+        catch (e) { last = e; if (loaded()) { last = null; break; } sleepMs(400); }
+      }
+      if (last) throw Error('launchd_bootstrap_failed');
+    }
     return { kind: 'launchd', path: p };
   }
   if (process.platform === 'linux') {

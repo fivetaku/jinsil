@@ -62,7 +62,8 @@ async function login(flags) {
   const cfg = loadConfig();
   const server = String(flags.server || cfg.server).replace(/\/$/, '');
   const r = await fetch(`${server}/device/code`, { method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ name: os.hostname(), os: `${process.platform}-${process.arch}`, client_version: CLIENT_VERSION }) });
+    body: JSON.stringify({ name: os.hostname(), os: `${process.platform}-${process.arch}`, client_version: CLIENT_VERSION }) })
+    .catch(() => { throw Error('server_unreachable'); });
   if (!r.ok) throw Error(`device_code_http_${r.status}`);
   const d = await r.json();
   console.log(`브라우저에서 이 PC 연결을 승인하세요: ${d.verify_url}\n확인 코드: ${d.user_code}`);

@@ -18,7 +18,12 @@ node scripts/e2e-run.mjs && npm run e2e:check   # 실제 구독 사용량 소모
 cd server && npm run dev          # 로컬 서버 (.dev.vars.example 참고)
 ```
 
-배포(`wrangler deploy`·D1 생성·Google OAuth 앱·npm publish·DNS)는 사용자 승인 사항이며 아직 하지 않았다.
+## 운영 (2026-09-23 배포)
+
+- 웹: https://jinsil.axwith.com — Cloudflare Workers `jinsil` + D1 `jinsil`(커스텀 도메인, 일일 cron `17 3 * * *`).
+- Google 로그인: GCP 프로젝트 `jinsil`의 웹 클라이언트 `jinsil-web`(프로덕션 게시, 범위 `openid`만). 비밀값은 `wrangler secret`의 `GOOGLE_CLIENT_SECRET`.
+- 설치: `npx jinsil setup` (npm 게시자 `gptaku`).
+- 재배포: `cd server && env -u CLOUDFLARE_API_TOKEN npx wrangler deploy` (wrangler OAuth 로그인 계정 기준).
 
 ---
 
