@@ -45,3 +45,4 @@ node_modules/
 server/.dev.vars
 *.tgz
 .fablize/
+.e2e/

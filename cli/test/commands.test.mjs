@@ -88,6 +88,14 @@ test('submit: 동의 없이는 보내지 않고, --yes 후 전송·재실행 시
     const n = got.length;
     await runAsync(['submit'], env);
     assert.equal(got.length, n, '이미 수용된 구간은 다시 보내지 않음');
+    const cfg = JSON.parse(fs.readFileSync(path.join(env.JINSIL_HOME, 'config.json'), 'utf8'));
+    assert.ok(cfg.consented_at);
+    // 새 홈: --auto on --yes는 동의까지 기록, --auto on 단독은 동의 없이 대기
+    const s2 = sandbox();
+    await runAsync(['submit', '--auto', 'on'], s2.env);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(s2.env.JINSIL_HOME, 'config.json'), 'utf8')).consented_at, null);
+    await runAsync(['submit', '--auto', 'on', '--yes'], s2.env);
+    assert.ok(JSON.parse(fs.readFileSync(path.join(s2.env.JINSIL_HOME, 'config.json'), 'utf8')).consented_at);
     const rep = await runAsync(['report'], env);
     assert.match(rep, /주간 100% 환산/);
     assert.match(rep, /구독료 \$100/);

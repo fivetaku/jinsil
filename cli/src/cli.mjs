@@ -190,7 +190,13 @@ export async function run(argv) {
     case 'status': return status();
     case 'report': return report();
     case 'submit': {
-      if (flags.auto) { const on = flags.auto === 'on' || flags.auto === true; saveConfig({ auto_submit: on }); console.log(`자동 제출: ${on ? '켜짐' : '꺼짐'}`); if (!flags.yes && !flags['dry-run']) return 0; }
+      if (flags.auto) {
+        const on = flags.auto === 'on' || flags.auto === true;
+        // --yes와 함께 켜면 그 자체를 제출 동의로 기록한다(형식은 --dry-run으로 미리 볼 수 있음).
+        saveConfig({ auto_submit: on, ...(on && flags.yes && !loadConfig().consented_at ? { consented_at: new Date().toISOString() } : {}) });
+        console.log(`자동 제출: ${on ? '켜짐' : '꺼짐'}${on && !loadConfig().consented_at ? ' (첫 제출 동의 전이라 대기 — jinsil submit으로 동의)' : ''}`);
+        if (!flags.yes && !flags['dry-run']) return 0;
+      }
       await submit({ yes: Boolean(flags.yes), dryRun: Boolean(flags['dry-run']), confirm: ask });
       return 0;
     }
