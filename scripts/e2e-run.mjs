@@ -58,7 +58,7 @@ try {
   // 1) 패키징 → npx 설치·서비스 등록·기기 연결
   const tgz = execFileSync('npm', ['pack', '--pack-destination', E2E_DIR], { cwd: path.join(root, 'cli'), encoding: 'utf8' }).trim().split('\n').at(-1);
   const owner = await login(srv.base, 'e2e-owner');
-  const setup = spawn('npx', ['--yes', path.join(E2E_DIR, tgz), 'setup', '--server', srv.base], { env: { ...cleanEnv(), JINSIL_NO_BROWSER: '1' }, stdio: ['ignore', 'pipe', 'pipe'] });
+  const setup = spawn('npx', ['--yes', `--package=${path.join(E2E_DIR, tgz)}`, 'jinsil', 'setup', '--server', srv.base], { env: { ...cleanEnv(), JINSIL_NO_BROWSER: '1' }, stdio: ['ignore', 'pipe', 'pipe'] });
   let setupOut = '';
   const setupExit = new Promise(r => setup.on('exit', r));
   const approved = new Promise((resolve, reject) => {
