@@ -32,9 +32,23 @@ export function setCookie(name, value, { maxAge, secure = true } = {}) {
   return `${name}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}${maxAge !== undefined ? `; Max-Age=${maxAge}` : ''}`;
 }
 export const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+// 본문을 읽는 도중 한도를 넘으면 멈춘다(전부 읽은 뒤 검사하지 않음).
 export async function readJson(req, limit = 256 * 1024) {
-  const text = await req.text();
-  if (text.length > limit) throw Object.assign(Error('body_too_large'), { status: 413 });
+  const tooLarge = () => Object.assign(Error('body_too_large'), { status: 413 });
+  if (Number(req.headers.get('content-length') || 0) > limit) throw tooLarge();
+  let text = '';
+  if (req.body) {
+    const reader = req.body.getReader(), dec = new TextDecoder();
+    let size = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > limit) { try { await reader.cancel(); } catch {} throw tooLarge(); }
+      text += dec.decode(value, { stream: true });
+    }
+    text += dec.decode();
+  }
   try { return JSON.parse(text); } catch { throw Object.assign(Error('invalid_json'), { status: 400 }); }
 }
 export async function readForm(req) {

@@ -4,15 +4,18 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { home } from './paths.mjs';
 
 const START = '# >>> jinsil >>>';
 const END = '# <<< jinsil <<<';
 export const binDir = () => path.join(home(), 'bin');
-export const shimPath = () => path.join(binDir(), 'jinsil');
+export const isWin = () => process.platform === 'win32';
+export const shimPath = () => path.join(binDir(), isWin() ? 'jinsil.cmd' : 'jinsil');
 
 export function rcFiles() {
   if (process.env.JINSIL_RC_FILES) return process.env.JINSIL_RC_FILES.split(',').filter(Boolean);
+  if (isWin()) return []; // Windows는 셸 설정 대신 사용자 PATH 환경변수에 등록한다
   const h = os.homedir();
   const shell = path.basename(process.env.SHELL || '');
   if (shell === 'zsh') return [path.join(process.env.ZDOTDIR || h, '.zshrc')];
@@ -24,54 +27,40 @@ export function rcFiles() {
 const q = s => `"${String(s).replace(/(["\\$`])/g, '\\$1')}"`;
 const sq = s => `'${String(s).replace(/'/g, `'\\''`)}'`;
 
-// 셸 설정에서 Anthropic으로 직접 가는 claude 별칭(값이 'claude'로 시작)을 찾는다.
-// 라우터·다른 모델용(ANTHROPIC_BASE_URL=…, ocx, teamclaude …)은 값이 claude로 시작하지 않으므로 건드리지 않는다.
-export function claudeAliases(text) {
-  const out = new Map();
-  for (const line of strip(text).split('\n')) {
-    const m = /^\s*alias\s+([A-Za-z0-9_.-]+)=(?:'([^']*)'|"([^"]*)")\s*(?:#.*)?$/.exec(line);
-    if (!m) continue;
-    const value = m[2] ?? m[3];
-    if (/^claude(\s|$)/.test(value) && m[1] !== 'claude') out.set(m[1], value);
-  }
-  return out;
-}
-// plan(선택): Claude Code 판단 결과 { wrap: [...], wrapClaude }. 규칙 후보를 좁히기만 한다(새 대상 추가 불가).
-export function aliasLines(text, fish = false, plan = null) {
-  const found = claudeAliases(text);
-  const wrapClaude = plan ? plan.wrapClaude !== false : true;
-  if (fish) return wrapClaude ? [`alias claude 'jinsil claude'`] : [];
-  const allowed = plan ? [...found].filter(([name]) => plan.wrap.includes(name)) : [...found];
-  const lines = allowed.map(([name, value]) => `alias ${name}=${sq('jinsil ' + value)}`);
-  if (wrapClaude) lines.push(`alias claude='jinsil claude'`);
-  return lines;
-}
-const block = (file, text, aliases, plan) => {
-  const fish = file.endsWith('.fish');
-  const lines = [fish ? `fish_add_path ${q(binDir())}` : `export PATH=${q(binDir())}:"$PATH"`];
-  if (aliases) lines.push('# 클진요: Claude Code를 기록기 경유로 실행 (uninstall 시 원래 별칭으로 돌아감)', ...aliasLines(text, fish, plan));
-  return `${START}\n${lines.join('\n')}\n${END}\n`;
-};
+// 0.2: PATH 한 줄만 둔다. 0.1.x가 넣은 별칭(alias claude='jinsil claude' 등)은 블록째 다시 쓰면서 사라진다.
+const block = file => `${START}\n${file.endsWith('.fish') ? `fish_add_path ${q(binDir())}` : `export PATH=${q(binDir())}:"$PATH"`}\n${END}\n`;
 const strip = text => text.replace(new RegExp(`\\n?${START}[\\s\\S]*?${END}\\n?`, 'g'), '\n').replace(/\n{3,}/g, '\n\n');
 
-export const userRcText = () => rcFiles().map(f => fs.existsSync(f) ? strip(fs.readFileSync(f, 'utf8')) : '').join('\n');
+// Windows 사용자 PATH(레지스트리 HKCU\Environment) 읽기·쓰기. 1024자 제한이 있는 setx 대신 .NET API를 쓴다.
+const psUserPath = cmd => execFileSync('powershell.exe', ['-NoProfile', '-Command', cmd], { encoding: 'utf8' }).trim();
+function winPath(add) {
+  if (process.env.JINSIL_SERVICE_DRYRUN === '1') return false;
+  const cur = psUserPath("[Environment]::GetEnvironmentVariable('Path','User')");
+  const parts = cur.split(';').filter(Boolean);
+  const has = parts.some(p => p.toLowerCase() === binDir().toLowerCase());
+  if (add === has) return false;
+  const next = add ? [...parts, binDir()] : parts.filter(p => p.toLowerCase() !== binDir().toLowerCase());
+  psUserPath(`[Environment]::SetEnvironmentVariable('Path', '${next.join(';').replace(/'/g, "''")}', 'User')`);
+  return true;
+}
 
-export function installCommand({ node = process.execPath, entry, aliases = true, plan = null }) {
+export function installCommand({ node = process.execPath, entry }) {
   fs.mkdirSync(binDir(), { recursive: true, mode: 0o700 });
-  fs.writeFileSync(shimPath(), `#!/bin/sh\nexec ${q(node)} ${q(entry)} "$@"\n`, { mode: 0o755 });
-  fs.chmodSync(shimPath(), 0o755);
+  if (isWin()) fs.writeFileSync(shimPath(), `@"${node}" "${entry}" %*\r\n`);
+  else { fs.writeFileSync(shimPath(), `#!/bin/sh\nexec ${q(node)} ${q(entry)} "$@"\n`, { mode: 0o755 }); fs.chmodSync(shimPath(), 0o755); }
   const changed = [];
+  if (isWin() && winPath(true)) changed.push('사용자 PATH');
   for (const f of rcFiles()) {
     const cur = fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : '';
-    const next = strip(cur).replace(/\s*$/, '') + (cur.trim() ? '\n\n' : '') + block(f, cur, aliases, plan);
+    const next = strip(cur).replace(/\s*$/, '') + (cur.trim() ? '\n\n' : '') + block(f);
     if (next !== cur) { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, next); changed.push(f); }
   }
-  const wrapped = aliases ? aliasLines(rcFiles().map(f => fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : '').join('\n'), false, plan) : [];
-  return { shim: shimPath(), rc: rcFiles(), changed, aliases: wrapped, onPath: (process.env.PATH || '').split(path.delimiter).includes(binDir()) };
+  return { shim: shimPath(), rc: rcFiles(), changed, onPath: (process.env.PATH || '').split(path.delimiter).includes(binDir()) };
 }
 
 export function uninstallCommand() {
   fs.rmSync(shimPath(), { force: true });
+  if (isWin()) { try { winPath(false); } catch {} }
   for (const f of rcFiles()) {
     if (!fs.existsSync(f)) continue;
     const cur = fs.readFileSync(f, 'utf8');

@@ -14,7 +14,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const SECRET = 'sk-ant-oat01-FAKE_TEST_TOKEN_should_never_be_written';
 const UUID = '11111111-2222-4333-8444-555555555555';
 
-test('계정 지문·요금제를 기록하고 인증값은 어디에도 쓰지 않으며, 유휴 시 usage 스냅샷을 남긴다', async () => {
+test({ skip: process.platform === 'win32' && '프록시 모드 검증은 openssl·lsof 필요(Unix)' }, '계정 지문·요금제를 기록하고 인증값은 어디에도 쓰지 않으며, 유휴 시 usage 스냅샷을 남긴다', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jinsil-rec-'));
   execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1', '-subj', '/CN=localhost',
     '-addext', 'subjectAltName=DNS:localhost', '-keyout', path.join(dir, 'key.pem'), '-out', path.join(dir, 'cert.pem')], { stdio: 'ignore' });

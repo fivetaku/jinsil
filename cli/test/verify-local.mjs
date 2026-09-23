@@ -10,6 +10,7 @@ import { once } from 'node:events';
 import { fileURLToPath } from 'node:url';
 import zlib from 'node:zlib';
 
+if (process.platform === 'win32') { console.log('verify-local: 프록시 모드 검증은 Unix 전용 — 건너뜀'); process.exit(0); }
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'quota-verify-'));
 fs.chmodSync(dir, 0o700);
