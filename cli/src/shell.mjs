@@ -36,31 +36,37 @@ export function claudeAliases(text) {
   }
   return out;
 }
-export function aliasLines(text, fish = false) {
+// plan(선택): Claude Code 판단 결과 { wrap: [...], wrapClaude }. 규칙 후보를 좁히기만 한다(새 대상 추가 불가).
+export function aliasLines(text, fish = false, plan = null) {
   const found = claudeAliases(text);
-  if (fish) return [`alias claude 'jinsil claude'`];
-  if (!found.size) return [`alias claude='jinsil claude'`];
-  return [...found].map(([name, value]) => `alias ${name}=${sq('jinsil ' + value)}`);
+  const wrapClaude = plan ? plan.wrapClaude !== false : true;
+  if (fish) return wrapClaude ? [`alias claude 'jinsil claude'`] : [];
+  const allowed = plan ? [...found].filter(([name]) => plan.wrap.includes(name)) : [...found];
+  const lines = allowed.map(([name, value]) => `alias ${name}=${sq('jinsil ' + value)}`);
+  if (wrapClaude) lines.push(`alias claude='jinsil claude'`);
+  return lines;
 }
-const block = (file, text, aliases) => {
+const block = (file, text, aliases, plan) => {
   const fish = file.endsWith('.fish');
   const lines = [fish ? `fish_add_path ${q(binDir())}` : `export PATH=${q(binDir())}:"$PATH"`];
-  if (aliases) lines.push('# 클진요: Claude Code를 기록기 경유로 실행 (uninstall 시 원래 별칭으로 돌아감)', ...aliasLines(text, fish));
+  if (aliases) lines.push('# 클진요: Claude Code를 기록기 경유로 실행 (uninstall 시 원래 별칭으로 돌아감)', ...aliasLines(text, fish, plan));
   return `${START}\n${lines.join('\n')}\n${END}\n`;
 };
 const strip = text => text.replace(new RegExp(`\\n?${START}[\\s\\S]*?${END}\\n?`, 'g'), '\n').replace(/\n{3,}/g, '\n\n');
 
-export function installCommand({ node = process.execPath, entry, aliases = true }) {
+export const userRcText = () => rcFiles().map(f => fs.existsSync(f) ? strip(fs.readFileSync(f, 'utf8')) : '').join('\n');
+
+export function installCommand({ node = process.execPath, entry, aliases = true, plan = null }) {
   fs.mkdirSync(binDir(), { recursive: true, mode: 0o700 });
   fs.writeFileSync(shimPath(), `#!/bin/sh\nexec ${q(node)} ${q(entry)} "$@"\n`, { mode: 0o755 });
   fs.chmodSync(shimPath(), 0o755);
   const changed = [];
   for (const f of rcFiles()) {
     const cur = fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : '';
-    const next = strip(cur).replace(/\s*$/, '') + (cur.trim() ? '\n\n' : '') + block(f, cur, aliases);
+    const next = strip(cur).replace(/\s*$/, '') + (cur.trim() ? '\n\n' : '') + block(f, cur, aliases, plan);
     if (next !== cur) { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, next); changed.push(f); }
   }
-  const wrapped = aliases ? aliasLines(rcFiles().map(f => fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : '').join('\n')) : [];
+  const wrapped = aliases ? aliasLines(rcFiles().map(f => fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : '').join('\n'), false, plan) : [];
   return { shim: shimPath(), rc: rcFiles(), changed, aliases: wrapped, onPath: (process.env.PATH || '').split(path.delimiter).includes(binDir()) };
 }
 

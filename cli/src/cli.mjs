@@ -9,6 +9,7 @@ import { home, dataDir, appDir } from './paths.mjs';
 import { loadConfig, saveConfig, loadDevice, saveDevice, removeDevice, ensureHome, DEFAULT_PORT } from './config.mjs';
 import * as service from './service.mjs';
 import * as shell from './shell.mjs';
+import { launcherSnippets, planWithClaude } from './aiplan.mjs';
 import { submit, pendingIntervals, CLIENT_VERSION } from './submit.mjs';
 import { readLedgerDir, computeIntervals, localCost } from './interval.mjs';
 
@@ -132,6 +133,10 @@ async function status() {
   return h && h.write_failures ? 2 : 0;
 }
 
+function ledgerRows() {
+  try { return readLedgerDir(dataDir()).rows.length; } catch { return 0; }
+}
+
 async function claude(flags, rest) {
   const cfg = loadConfig();
   const h = await health(cfg.port);
@@ -150,7 +155,7 @@ async function claude(flags, rest) {
 }
 
 const HELP = `jinsil ${VERSION} — 클진요 (클로드에게 진실을 요구합니다)
-  jinsil setup [--server URL] [--no-login] [--no-path] [--no-alias] [--no-auto-submit]
+  jinsil setup [--server URL] [--no-login] [--no-path] [--no-alias] [--no-ai] [--no-auto-submit]
                                                          기록기 설치·서비스 등록·이 PC 연결
   jinsil claude [claude 인수...]                         기록기를 거쳐 Claude Code 실행
   jinsil status | report                                 상태 / 로컬 계산 결과
@@ -187,7 +192,20 @@ export async function run(argv) {
       }
       let cmd = null;
       if (!flags['no-path']) {
-        cmd = shell.installCommand({ entry, aliases: !flags['no-alias'] });
+        let plan = null;
+        if (!flags['no-alias'] && !flags['no-ai'] && process.env.JINSIL_SERVICE_DRYRUN !== '1') {
+          console.log('Claude Code로 내 셸 설정을 분석하는 중… (짧은 요청 1회, 기록기 경유 — 연결 테스트 겸용)');
+          const rowsBefore = ledgerRows();
+          const r = await planWithClaude(launcherSnippets(shell.userRcText()), { port });
+          if (r.ok) {
+            plan = r.plan;
+            for (const sk of plan.skip) console.log(`  건너뜀: ${sk.name} — ${sk.reason}`);
+            for (const n of plan.notes) console.log(`  참고: ${n}`);
+          } else console.log(`  Claude 분석을 건너뜁니다(${r.reason}) — 기본 규칙으로 설정합니다.`);
+          const grew = ledgerRows() > rowsBefore;
+          console.log(grew ? '연결 테스트: 통과 — 요청이 기록기를 거쳐 장부에 기록됐습니다.' : '연결 테스트: 장부에 새 기록이 없습니다. `jinsil status`로 확인하세요.');
+        }
+        cmd = shell.installCommand({ entry, aliases: !flags['no-alias'], plan });
         console.log(`명령 등록: ${cmd.shim}${cmd.changed.length ? ` (셸 설정: ${cmd.changed.join(', ')})` : ''}`);
         if (cmd.aliases.length) console.log(`기록기 경유 별칭: ${cmd.aliases.map(a => a.replace(/^alias\s+/, '').replace(/=.*$/, '')).join(', ')} (끄기: jinsil setup --no-alias)`);
       }

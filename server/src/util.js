@@ -41,6 +41,10 @@ export async function readForm(req) {
   const f = await req.formData();
   return Object.fromEntries(f.entries());
 }
-export const planOf = tier => !tier ? null : /max_20x/.test(tier) ? 'max20x' : /max_5x/.test(tier) ? 'max5x' : /pro/.test(tier) ? 'pro' : null;
-export const PLAN_LABEL = { pro: 'Pro', max5x: 'Max 5x', max20x: 'Max 20x' };
+// Team 좌석의 rate_limit_tier 문자열은 아직 실측 전 — 'team'을 먼저 가려 Pro로 오분류되지 않게 한다.
+// 확인 전 매핑: team+premium → Team Premium, 그 외 team → Team Standard. 첫 실측 시 이 규칙을 검증·수정한다.
+export const planOf = tier => !tier ? null
+  : /team/.test(tier) ? (/premium/.test(tier) ? 'team_premium' : 'team_standard')
+  : /max_20x/.test(tier) ? 'max20x' : /max_5x/.test(tier) ? 'max5x' : /pro/.test(tier) ? 'pro' : null;
+export const PLAN_LABEL = { pro: 'Pro', max5x: 'Max 5x', max20x: 'Max 20x', team_standard: 'Team Standard', team_premium: 'Team Premium' };
 export const WEEKS_PER_MONTH = 30 / 7;

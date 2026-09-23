@@ -37,19 +37,22 @@ a{color:inherit}.wrap{max-width:1200px;margin:0 auto;padding:0 24px}
 .panel{border:2px solid #111;border-radius:6px;margin-top:22px;padding:18px 18px 14px}
 .tab{display:inline-block;background:#111;color:#fff;font-weight:900;padding:6px 14px;border-radius:4px 4px 0 0;margin:26px 0 -2px;font-size:16px}
 .tab+.panel{margin-top:0;border-top-left-radius:0}
-.bars .row{display:grid;grid-template-columns:90px 1fr 90px;align-items:center;gap:10px;margin:8px 0;font-weight:800}
+.bars .row{display:grid;grid-template-columns:130px 1fr 90px;align-items:center;gap:10px;margin:8px 0;font-weight:800}
 .bar{height:26px;background:#f2f2f2;position:relative}.bar i{position:absolute;left:0;top:0;bottom:0;background:#111}.bar i.hi{background:#FFD400;border:2px solid #111}
 .bar.wait{background:repeating-linear-gradient(45deg,#fff,#fff 6px,#eee 6px,#eee 12px);border:2px dashed #999}
 table{width:100%;border-collapse:collapse;font-size:14px}th{text-align:left;font-weight:700;color:#555;border-bottom:2px solid #111;padding:8px 6px}
 td{padding:8px 6px;border-bottom:1px solid #eee}td.num{font-variant-numeric:tabular-nums}
 .dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#2a9d4a;margin-right:6px}.dot.g{background:#aaa}.dot.r{background:#D62828}
+.feeds{display:grid;grid-template-columns:1fr 1fr;gap:22px}.feeds h3{margin:0 0 8px;font-size:17px}
+.sub{margin:26px 0 12px;font-size:20px;font-weight:900}.sub small{font-size:13px;font-weight:500;color:#666;margin-left:8px}
+.cards.team{grid-template-columns:repeat(2,1fr);max-width:66.6%}
 .ranks{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}.ranks h3{margin:0 0 8px;font-size:17px}
 .foot{text-align:center;color:#666;font-size:13px;margin:40px 0 30px}
 .note{font-size:13px;color:#666;margin:10px 0 0}.warn{background:#fff6cc;border:2px solid #111;padding:10px 14px;font-size:14px;margin-top:14px}
 .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}.kpi{border:2px solid #111;padding:14px}.kpi b{display:block;font-size:30px;font-weight:900;letter-spacing:-1px}.kpi span{font-size:13px;color:#555}
 code,pre{background:#f4f4f4;padding:2px 6px;border-radius:4px;font-size:13px}pre{padding:12px;overflow:auto}
 .prose{max-width:780px;line-height:1.75;font-size:16px}.prose h2{margin-top:32px}
-@media (max-width:820px){.cards,.ranks,.kpis{grid-template-columns:1fr}.logo small{display:none}.nav a.hide-m{display:none}.big{font-size:48px}
+@media (max-width:820px){.cards,.cards.team,.ranks,.kpis,.feeds{grid-template-columns:1fr;max-width:none}.logo small{display:none}.nav a.hide-m{display:none}.big{font-size:48px}
 .bars .row{grid-template-columns:70px 1fr 64px}.hide-m{display:none}.top .wrap{padding:0 14px}.wrap{padding:0 14px}th,td{padding:7px 4px;font-size:13px}}
 @media print{.top,.band,.noprint{display:none}.panel{break-inside:avoid}}`;
 
@@ -80,30 +83,38 @@ function planCard(p, sticks, bestPlan) {
 export async function home(req, env) {
   const [s, f, user] = await Promise.all([publicStats(env), feed(env, 20), currentUser(req, env)]);
   const plans = ['pro', 'max5x', 'max20x'].map(k => s.plans[k]);
+  const teamPlans = ['team_standard', 'team_premium'].map(k => s.plans[k]).filter(Boolean);
+  const allPlans = [...plans, ...teamPlans];
   const best = Object.entries(s.stickers).find(([, v]) => v.some(t => t.kind === 'best'))?.[0];
   const maxMult = Math.max(1, ...plans.map(p => p.shown ? p.value_multiple : 0));
-  const bars = plans.map(p => p.shown
+  const bars = allPlans.map(p => p.shown
     ? `<div class="row"><span>${esc(p.label)}</span><div class="bar"><i class="${best === p.plan ? 'hi' : ''}" style="width:${(p.value_multiple / maxMult * 100).toFixed(1)}%"></i></div><span>${x(p.value_multiple)}</span></div>`
     : `<div class="row"><span>${esc(p.label)}</span><div class="bar wait"></div><span style="color:#888">측정 대기</span></div>`).join('');
-  const rankTables = plans.map(p => {
+  const rankTables = allPlans.map(p => {
     const rows = s.ranking[p.plan];
     return `<div><h3>${esc(p.label)}</h3>${rows.length ? `<table><tr><th>순위</th><th>참여자</th><th>가성비</th><th class="hide-m">주간 100%</th></tr>${rows.slice(0, 10).map(r =>
       `<tr><td>${r.rank}</td><td>#${esc(r.tag)}</td><td class="num">${(r.value_multiple).toFixed(1)}배</td><td class="num hide-m">${usd(r.usd_per_100pct)}</td></tr>`).join('')}</table>`
       : `<p class="note">${p.shown ? '아직 순위에 오른 계정이 없습니다(주간 게이지 3%p 이상 필요).' : `측정 대기 — 이 요금제 참여 계정이 ${p.min_accounts}개 이상이면 순위를 공개합니다(현재 ${p.n}).`}</p>`}</div>`;
   }).join('');
-  const feedRows = f.length ? f.map(r => `<tr><td>${kst(r.at)}</td><td><span class="dot ${r.status === 'accepted' ? (r.display === '검증 중' ? 'g' : '') : r.status === 'flagged' ? 'r' : 'g'}"></span>#${esc(r.tag)}</td>
-    <td>${esc(PLAN_LABEL[r.plan] || '미확인')}</td><td>${gaugeLabel(r.gauge)} ${esc(r.range)}</td><td class="num">${esc(r.display)}</td></tr>`).join('')
-    : '<tr><td colspan="5" class="note">아직 제출된 구간이 없습니다.</td></tr>';
+  const feedTable = gauge => {
+    const rs = f.filter(r => r.gauge === gauge);
+    return `<table><tr><th>시각(KST)</th><th>참여자</th><th>요금제</th><th>게이지 변화</th><th>상태</th></tr>${rs.length ? rs.map(r => `<tr><td>${kst(r.at)}</td><td><span class="dot ${r.status === 'accepted' ? (r.display.startsWith('검증 중') ? 'g' : '') : r.status === 'flagged' ? 'r' : 'g'}"></span>#${esc(r.tag)}</td>
+    <td>${esc(PLAN_LABEL[r.plan] || '미확인')}</td><td>${esc(r.range)}</td><td>${esc(r.display)}</td></tr>`).join('') : '<tr><td colspan="5" class="note">아직 없습니다.</td></tr>'}</table>`;
+  };
+  const feedRows = `<div class="feeds"><div><h3>주간 게이지</h3>${feedTable('7d')}</div><div><h3>5시간 게이지</h3>${feedTable('5h')}</div></div>
+    <p class="note">구간 하나의 1%당 값은 게이지 반영이 수십 초 늦어 크게 튀므로 싣지 않습니다. 가성비는 계정별로 이어진 구간을 모두 합산해 계산합니다. 새 계정은 24시간 검증 후 통계에 반영됩니다.</p>`;
   return html(layout('클진요 — 클로드에게 진실을 요구합니다', `
 <section class="band"><div class="wrap"><h1>클로드에게 진실을 요구합니다</h1><p class="join">터미널에서 <code>npx jinsil setup</code> 으로 클진요를 설치한 뒤 Claude Code를 사용해 주세요 <a href="/methodology">어떻게 계산하나요?</a></p><p class="live">지금 <b>${s.measuring.users}명</b>이 PC ${s.measuring.devices}대에서 측정 중 · 게이지가 오른 구간부터 자동 제출</p></div></section>
 <main class="wrap" id="stats">
   <div class="lead"><h2>구독료 <mark>1달러로</mark> 얼마나 쓸 수 있나</h2><p>${esc(s.note)}${s.price_status === 'provisional' ? ' · 단가 잠정' : ''}</p></div>
   <div class="cards">${plans.map(p => planCard(p, s.stickers, best)).join('')}</div>
+  <h3 class="sub">팀 요금제 <small>좌석당 월 결제가 · Standard는 Pro의 1.25배, Premium은 6.25배 사용량(공식 안내)</small></h3>
+  <div class="cards team">${teamPlans.map(p => planCard(p, s.stickers, best)).join('')}</div>
   <div class="tab">가성비 배수</div><div class="panel bars">${bars}
     <p class="note">가성비 배수 = (주간 100% 환산 × 4.35주) ÷ 월 구독료. 계정당 한 표로 평균${s.baseline ? ` · 가격→가치 비교 기준: ${esc(PLAN_LABEL[s.baseline])}` : ''}.</p></div>
   <div class="tab">요금제별 순위</div><div class="panel"><div class="ranks">${rankTables}</div>
     <p class="note">순위가 낮을수록 같은 구독료로 한도를 더 빨리 쓰는 사용 패턴입니다(캐시·출력 비중에 따라 달라짐). 익명 태그만 공개합니다.</p></div>
-  <div class="tab">참여 로그</div><div class="panel"><table><tr><th>시각(KST)</th><th>참여자</th><th>요금제</th><th>게이지 변화</th><th>환산</th></tr>${feedRows}</table></div>
+  <div class="tab">참여 로그</div><div class="panel">${feedRows}</div>
 </main>`, { user }), 200, { 'cache-control': 'no-store' });
 }
 
@@ -156,15 +167,20 @@ export async function me(req, env, user, data) {
   // 5시간 1%와 주간 1%는 단위가 달라 섞지 않는다 — 추이는 주간 구간만.
   const accepted = data.intervals.filter(i => i.status === 'accepted' && i.usd_per_pct !== null && i.gauge === '7d').slice().reverse();
   const series = accepted.map(i => ({ v: i.usd_per_pct }));
-  const reasonKo = r => ({ too_few_ticks: '게이지 상승 부족', routed_upstream: '라우터 경유', cache_ttl_unknown: '캐시 보관시간 미확인', unpriced_model: '단가 미확인 모델', incomplete_usage: '기록 불완전', tier_unknown: '요금제 미확인', daily_interval_cap: '일일 한도 초과', pending_or_interrupted_requests: '중단된 요청' }[r] || r || '');
-  const rows = data.intervals.slice(0, 50).map(i => `<tr><td>${kst(i.t_end)}</td><td>#${esc(i.public_tag)}</td><td>${gaugeLabel(i.gauge)} ${i.g_start}%→${i.g_end}%</td>
-    <td class="num">${i.requests}</td><td class="num">${i.usd_per_pct === null ? '—' : usd(i.usd_per_pct, 2)}</td><td>${i.status === 'accepted' ? '수용' : i.status === 'flagged' ? '검토 중' : `제외 · ${esc(reasonKo(i.exclude_reason))}`}</td></tr>`).join('');
+  const reasonKo = r => ({ too_few_ticks: '게이지 상승 부족', routed_upstream: '라우터 경유', cache_ttl_unknown: '캐시 보관시간 미확인', unpriced_model: '단가 미확인 모델', incomplete_usage: '기록 불완전', tier_unknown: '요금제 미확인', daily_interval_cap: '일일 한도 초과', pending_or_interrupted_requests: '중단된 요청', import_selection_bias: '가져오기 표본 편향' }[r] || r || '');
+  const histTable = gauge => {
+    const rs = data.intervals.filter(i => i.gauge === gauge).slice(0, 40);
+    return `<table><tr><th>구간 끝(KST)</th><th>계정</th><th>게이지</th><th>요청</th><th>상태</th></tr>${rs.length ? rs.map(i => `<tr><td>${kst(i.t_end)}</td><td>#${esc(i.public_tag)}</td><td>${i.g_start}%→${i.g_end}%</td>
+    <td class="num">${i.requests}</td><td>${i.status === 'accepted' ? '수용' : i.status === 'flagged' ? '검토 중' : `제외 · ${esc(reasonKo(i.exclude_reason))}`}</td></tr>`).join('') : '<tr><td colspan="5" class="note">없음</td></tr>'}</table>`;
+  };
+  const rows = `<div class="feeds"><div><h3>주간 게이지</h3>${histTable('7d')}</div><div><h3>5시간 게이지</h3>${histTable('5h')}</div></div>
+    <p class="note">구간별 1%당 값은 게이지 반영 지연으로 튀어서 표시하지 않습니다. 위 카드의 값은 이어진 구간 전체를 합산한 결과입니다.</p>`;
   const devs = data.devices.map(d => `<tr><td>${esc(d.name)}</td><td>${esc(d.os)}</td><td>${d.last_seen ? kst(new Date(d.last_seen).toISOString()) : '—'}</td>
     <td>${d.revoked_at ? '해제됨' : `<form method="post" action="/me/devices/revoke"><input type="hidden" name="csrf" value="${esc(user.csrf)}"><input type="hidden" name="device_id" value="${esc(d.id)}"><button class="btn ghost">연결 해제</button></form>`}</td></tr>`).join('');
   return html(layout('내 대시보드 — 클진요', `<main class="wrap"><div class="lead"><h2>내 대시보드</h2><p>얼마나 비싸게 쓰고 있는지 · 같은 요금제에서 몇 위인지</p></div>
 ${accounts}
 <div class="tab">주간 1%당 비용 추이</div><div class="panel">${sparkline(series)}</div>
-<div class="tab">제출 이력</div><div class="panel"><table><tr><th>구간 끝(KST)</th><th>계정</th><th>게이지</th><th>요청</th><th>1%당</th><th>상태</th></tr>${rows || '<tr><td colspan="6" class="note">없음</td></tr>'}</table>
+<div class="tab">제출 이력</div><div class="panel">${rows}
 <p class="noprint" style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap"><a class="btn" href="/me/export.csv">CSV 내려받기</a><a class="btn ghost" href="/me/report">이의제기용 리포트(PDF로 저장)</a></p></div>
 <div class="tab">연결된 PC</div><div class="panel"><table><tr><th>이름</th><th>OS</th><th>마지막 제출</th><th></th></tr>${devs || '<tr><td colspan="4" class="note">없음</td></tr>'}</table></div>
 <div class="panel noprint"><form method="post" action="/me/delete" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><input type="hidden" name="csrf" value="${esc(user.csrf)}">

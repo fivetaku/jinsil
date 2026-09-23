@@ -148,7 +148,8 @@ test('setup: 직접 claude 별칭만 jinsil 경유로 감싸고(라우터 별칭
   assert.match(out, /자동 제출: 켜짐/);
   const text = fs.readFileSync(rc, 'utf8');
   assert.ok(text.includes(`alias cc='jinsil claude'`) && text.includes(`alias ccd='jinsil claude --dangerously-skip-permissions'`));
-  assert.ok(!/alias ccg='jinsil|alias cco='jinsil|alias claude='jinsil/.test(text));
+  assert.ok(!/alias ccg='jinsil|alias cco='jinsil/.test(text));
+  assert.ok(text.includes(`alias claude='jinsil claude'`), '평소 claude도 감싼다');
   const cfg = JSON.parse(fs.readFileSync(path.join(d, 'home', 'config.json'), 'utf8'));
   assert.equal(cfg.auto_submit, true); assert.ok(cfg.consented_at);
   run(['setup', '--no-login', '--port', '10296'], e);
@@ -161,4 +162,28 @@ test('setup: 직접 claude 별칭만 jinsil 경유로 감싸고(라우터 별칭
   run(['setup', '--no-login', '--no-auto-submit', '--port', '10295'], { ...env2, JINSIL_RC_FILES: rc2 });
   assert.ok(fs.readFileSync(rc2, 'utf8').includes(`alias claude='jinsil claude'`));
   assert.notEqual(JSON.parse(fs.readFileSync(path.join(d2, 'home', 'config.json'), 'utf8')).auto_submit, true);
+});
+
+test('Claude 분석: 비밀값을 가린 발췌만 보내고, 판단은 규칙 후보를 좁히기만 한다(새 대상 추가 불가)', async () => {
+  const { launcherSnippets, planWithClaude, redact } = await import('../src/aiplan.mjs');
+  const { aliasLines } = await import('../src/shell.mjs');
+  const fakeKey = 'sk' + '-' + 'x'.repeat(16); // 가짜 키(런타임 조립)
+  const rc = `export SOME_API_KEY=${fakeKey}\nalias cc='claude'\nalias ccd='claude --x'\nalias ccg='ANTHROPIC_BASE_URL=http://localhost:8317 claude'\nalias ll='ls -l'\nclaude() {\n  command claude "$@"\n}\n`;
+  const sn = launcherSnippets(rc);
+  assert.ok(sn.some(x => x.startsWith('alias cc=')) && sn.some(x => x.startsWith('claude()')) && !sn.some(x => x.includes('ll=')));
+  assert.ok(!sn.join('\n').includes(fakeKey), '키 줄은 발췌하지 않음');
+  assert.equal(redact('X_TOKEN=abc123 claude'), 'X_TOKEN=<redacted> claude');
+  assert.equal(redact(`run ${fakeKey} now`), 'run <redacted> now');
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'jinsil-ai-'));
+  const answer = JSON.stringify({ result: JSON.stringify({ wrap: ['cc', 'ccg'], wrap_claude: false, skip: [{ name: 'ccg', reason: '라우터' }], notes: [] }) });
+  fs.writeFileSync(path.join(d, 'answer.json'), answer);
+  const fake = path.join(d, 'claude');
+  fs.writeFileSync(fake, `#!/bin/sh\ncat > "${d}/stdin.txt"\ncat "${d}/answer.json"\n`, { mode: 0o755 });
+  const r = await planWithClaude(sn, { port: 1, bin: fake });
+  assert.equal(r.ok, true);
+  assert.ok(fs.readFileSync(path.join(d, 'stdin.txt'), 'utf8').includes("alias cc='claude'"));
+  assert.deepEqual(aliasLines(rc, false, r.plan), [`alias cc='jinsil claude'`], 'ccg는 규칙 후보가 아니라 Claude가 골라도 제외, wrap_claude=false면 claude 미포함');
+  const bad = path.join(d, 'bad');
+  fs.writeFileSync(bad, '#!/bin/sh\ncat >/dev/null\necho nope\n', { mode: 0o755 });
+  assert.equal((await planWithClaude(sn, { port: 1, bin: bad })).ok, false);
 });

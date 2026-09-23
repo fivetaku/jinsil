@@ -1,7 +1,7 @@
 // 집계: 계정별 주간 100% 환산 → 요금제별 평균·가성비 배수·순위·스티커. 계정당 한 표.
 import { planOf, PLAN_LABEL, WEEKS_PER_MONTH } from './util.js';
 
-const PLANS = ['pro', 'max5x', 'max20x'];
+const PLANS = ['pro', 'max5x', 'max20x', 'team_standard', 'team_premium'];
 const MIN_WEEKLY_PCT = 3;             // 순위·통계 편입 최소 주간 게이지 합(%p)
 const ADVERT_GAP = 0.8;               // 가치 배수가 가격 배수의 80% 미만이면 '광고보다 적음'
 // 이 규칙의 flag는 해당 계정의 잘못이 아니다(다른 사용자가 이 계정 지문으로 제출 시도).
@@ -130,7 +130,8 @@ export async function feed(env, limit = 30) {
   return results.map(r => ({
     at: new Date(Math.floor(r.created_at / 60000) * 60000).toISOString(), tag: r.public_tag, plan: planOf(r.tier),
     gauge: r.gauge, range: `${r.g_start}%→${r.g_end}%`,
-    display: r.status === 'accepted' ? (r.created_at - r.first_seen < probationMs ? '검증 중' : `$${r.usd_per_pct.toFixed(2)}/1%`)
+    // 구간 하나의 1%당 값은 게이지 반영 지연 때문에 크게 튄다 — 공개 피드에는 싣지 않고 계정 합산값만 쓴다.
+    display: r.status === 'accepted' ? (r.created_at - r.first_seen < probationMs ? '검증 중(24시간)' : '반영')
       : r.status === 'flagged' ? '검토 중' : '통계 제외',
     status: r.status,
   }));
