@@ -1,0 +1,37 @@
+{
+  "_comment": "Recovery-First 훅 활성화 템플릿 — 내용을 .claude/settings.local.json에 병합하세요. stop-verify는 _meta/recovery-checks.sh가 있을 때만 검증을 수행하므로 등록 자체는 항상 안전합니다.",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/stop-verify.sh\""
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-recovery.sh\""
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "Bash|Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/posttool-failure-recovery.sh\""
+          }
+        ]
+      }
+    ]
+  }
+}

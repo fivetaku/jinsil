@@ -1,0 +1,273 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "name": "Development Agent",
+  "version": "2.0.0",
+  "description": "API, CLI, LLM 앱, 자동화 스크립트를 subtype별 평가 기준으로 설계, 구현, 테스트, 리뷰하는 개발 에이전트 워크스페이스입니다.",
+  "tier": "standard",
+  "folders": [
+    {
+      "path": ".claude/commands",
+      "purpose": "Development 슬래시 커맨드를 보관합니다.",
+      "required": true
+    },
+    {
+      "path": "10-planning",
+      "purpose": "요구사항·설계·ADR·작업 계획을 보관합니다.",
+      "required": true
+    },
+    {
+      "path": "20-knowledge",
+      "purpose": "도메인 지식·개발 참고자료·프레임워크를 보관합니다.",
+      "required": true
+    },
+    {
+      "path": "30-docs",
+      "purpose": "설치·사용·API·운영 문서를 보관합니다.",
+      "required": true
+    },
+    {
+      "path": "40-reports",
+      "purpose": "테스트 결과·검토·실험 보고서를 보관합니다.",
+      "required": true
+    },
+    {
+      "path": "50-output",
+      "purpose": "검증된 전달용 산출물을 보관합니다. 빌드 도구의 dist/와 별개입니다.",
+      "required": true
+    },
+    {
+      "path": "90-archive",
+      "purpose": "이전 문서와 폐기 산출물을 보관합니다.",
+      "required": true
+    },
+    {
+      "path": "src",
+      "purpose": "소스 코드를 보관합니다.",
+      "required": true
+    },
+    {
+      "path": "tests",
+      "purpose": "unit, integration, e2e 테스트를 보관합니다.",
+      "required": true
+    },
+    {
+      "path": "evals",
+      "purpose": "subtype별 평가 harness를 보관합니다.",
+      "required": false
+    },
+    {
+      "path": "prompts",
+      "purpose": "LLM 앱 프롬프트와 few-shot 예시를 보관합니다.",
+      "required": false
+    },
+    {
+      "path": "scripts",
+      "purpose": "자동화와 운영 스크립트를 보관합니다.",
+      "required": false
+    },
+    {
+      "path": "config",
+      "purpose": "환경별 설정을 보관합니다.",
+      "required": false
+    },
+    {
+      "path": "20-knowledge/frameworks",
+      "purpose": "커맨드에서 호출하는 개발 프레임워크의 문서를 보관합니다.",
+      "required": false
+    }
+  ],
+  "commands": [
+    {
+      "name": "specify",
+      "description": "기능 명세 작성, subtype 변경, 요구사항 수정, 실패 조건 보완, 다시 정의 요청에 사용합니다. 'api 기능 명세 잡아줘', 'llm-app 기준으로 다시 정의해줘', '실패 조건 보완해줘' 같은 요청에 대응합니다. 단, 설계 상세화는 design을 사용합니다.",
+      "tier": "standard"
+    },
+    {
+      "name": "design",
+      "description": "모듈 설계, SOLID 경계 설정, subtype별 아키텍처 보완, API/CLI/LLM 흐름 재설계 요청에 사용합니다. '설계해줘', 'SOLID 기준으로 보완해줘', 'CLI 구조 다시 잡아줘' 같은 요청에 대응합니다. 단, 코드 작성은 implement를 사용합니다.",
+      "tier": "standard"
+    },
+    {
+      "name": "implement",
+      "description": "코드 구현, 부분 수정, 버그 수정, LLM 통합 보완, 이어서 구현 요청에 사용합니다. '구현해줘', '버그 고쳐줘', 'RAG 통합 보완해줘' 같은 요청에 대응합니다. 단, 검증 실행은 test를 사용합니다.",
+      "tier": "lite"
+    },
+    {
+      "name": "test",
+      "description": "테스트 작성, eval harness 실행, 실패 재현, 커버리지 보완, 다시 실행 요청에 사용합니다. '테스트 추가해줘', 'eval 돌려줘', '실패 재현해줘' 같은 요청에 대응합니다. 단, 보안 리뷰는 review를 사용합니다.",
+      "tier": "standard"
+    },
+    {
+      "name": "review",
+      "description": "코드 리뷰, 보안 점검, OWASP 검토, SOLID 위반 확인, RAG 품질 점검, 다시 리뷰 요청에 사용합니다. '리뷰해줘', 'OWASP 기준으로 봐줘', 'RAG 품질 확인해줘' 같은 요청에 대응합니다. 단, 수정 구현은 implement를 사용합니다.",
+      "tier": "standard"
+    }
+  ],
+  "frameworks": [
+    {
+      "name": "OWASP Top 10",
+      "path": "20-knowledge/frameworks/owasp-top10.md",
+      "applies_to": [
+        "review",
+        "security",
+        "api"
+      ]
+    },
+    {
+      "name": "RAG Chunking",
+      "path": "20-knowledge/frameworks/rag-chunking.md",
+      "applies_to": [
+        "implement",
+        "review",
+        "llm-app"
+      ]
+    },
+    {
+      "name": "Subtype Eval Harness",
+      "path": "20-knowledge/frameworks/subtype-eval-harness.md",
+      "applies_to": [
+        "specify",
+        "test",
+        "api",
+        "cli",
+        "llm-app",
+        "automation"
+      ]
+    }
+  ],
+  "examples": [
+    {
+      "name": "sample-api-project",
+      "path": "examples/sample-api-project"
+    },
+    {
+      "name": "llm-app-example",
+      "path": "examples/llm-app-example.md"
+    }
+  ],
+  "scale_modes": [
+    "lite",
+    "standard",
+    "full"
+  ],
+  "harness_type": "basic",
+  "state_model": {
+    "enabled": true,
+    "path": "_meta"
+  },
+  "doctor_checks": [
+    "structure",
+    "instructions",
+    "commands",
+    "security",
+    "harness-contract"
+  ],
+  "subtypes": [
+    "api",
+    "cli",
+    "llm-app",
+    "automation"
+  ],
+  "scale_mode_subtypes": {
+    "lite": [
+      "api",
+      "cli",
+      "automation"
+    ],
+    "standard": [
+      "api",
+      "cli",
+      "llm-app",
+      "automation"
+    ],
+    "full": [
+      "api",
+      "llm-app",
+      "automation"
+    ]
+  },
+  "target_runtimes": [
+    "claude",
+    "codex"
+  ],
+  "instruction_surfaces": {
+    "claude": "CLAUDE.md",
+    "codex": "AGENTS.md"
+  },
+  "generation_options": {
+    "archetype": "development",
+    "target_runtime": "dual",
+    "harness_strength": "basic",
+    "scale_mode": "standard",
+    "generation_date": "2026-09-23",
+    "agents": [],
+    "role_contracts": {},
+    "agents_policy": "auto",
+    "orchestration": "none",
+    "guard_hook": true,
+    "wrap_command": false,
+    "recovery": true,
+    "data_isolation": [],
+    "scripts_layer": false,
+    "local_only": false,
+    "onboarding_hook": false,
+    "preset": null,
+    "codex_hook_sha256": {
+      ".codex/hooks/config-guard.sh": "1d318009049714a65c9c8f8b58f7b27d5a814c1feb25d4de85f5526730442137",
+      ".codex/hooks/pretool-guard.sh": "1d14b2b2a4d8b15b478f033168eb5f5a557a03a8be25fc9ba70196a8d1ca979a",
+      ".codex/hooks/session-recovery.sh": "8eeee79d1ee71675085de2caa99cab21a30d3c931a78fa1acd8399fe78f21e50",
+      ".codex/hooks/stop-verify.sh": "cd09341b4059e2a8464c22810cdb680f2be3f9f85b98c8d36b940973492beaf7",
+      ".codex/hooks.json": "06b4a38eeae1317e9fcbe33ee531502f5fbe1cce464b375be2c39cb95ffa5449"
+    },
+    "checker_sha256": {
+      "_meta/recovery-state.py": "8cf28d6a832a2ed470da3a827f6bbd249c7d8f0c5fe80dd9446eb6fcfea59937",
+      "_meta/completion-check.py": "e887c3d1e9c5ef0c3bbef54f9683abcd38e98aea80e390a5b1aace88e303d8b5"
+    },
+    "harness_inventory": {
+      "claude": {
+        "artifacts": {
+          ".claude/hooks/config-guard.sh": "eecc2d12252daebafaf9808950273b3035c2fa5185053946b561b49007d75f6d",
+          ".claude/hooks/posttool-failure-recovery.sh": "797a1d0213e865113a1f7e8dcc07a61bb7dbc798989e259745e79e83368d2eed",
+          ".claude/hooks/pretool-guard.sh": "2990244d5fc39f987237f7841182711b265abdaffbfcfb6dbb382d475e5dde1f",
+          ".claude/hooks/session-recovery.sh": "bd1a23542f2fa0046c4beb28babe4bb8ab3a4987273809c9212ad7f29870f5ab",
+          ".claude/hooks/settings.guard.json.template": "1982e272091ab3aae32c411ec3a2269cfeeef5eea623ba55ba4d57e07956bcb5",
+          ".claude/hooks/settings.recovery.json.template": "bf1655c709868fa97017a85cad9a162daba7ecb082128482ad2b63daf6348ed8",
+          ".claude/hooks/stop-verify.sh": "f915d61dfec3ac30fe77e84c8902756bac48666fbfdb72595c70a5e93bf69adc"
+        },
+        "configurations": {}
+      },
+      "codex": {
+        "artifacts": {
+          ".codex/hooks/config-guard.sh": "1d318009049714a65c9c8f8b58f7b27d5a814c1feb25d4de85f5526730442137",
+          ".codex/hooks/pretool-guard.sh": "1d14b2b2a4d8b15b478f033168eb5f5a557a03a8be25fc9ba70196a8d1ca979a",
+          ".codex/hooks/session-recovery.sh": "8eeee79d1ee71675085de2caa99cab21a30d3c931a78fa1acd8399fe78f21e50",
+          ".codex/hooks/stop-verify.sh": "cd09341b4059e2a8464c22810cdb680f2be3f9f85b98c8d36b940973492beaf7"
+        },
+        "configurations": {
+          ".codex/hooks.json": [
+            {
+              "event": "PreToolUse",
+              "matcher": "^(Bash|shell|exec_command)$",
+              "command": "SCAN=\"${CODEX_PROJECT_DIR:-$PWD}\"; PROJECT_ROOT=\"\"; while [ \"$SCAN\" != \"/\" ]; do if [ -f \"$SCAN/.codex/hooks.json\" ] && [ ! -L \"$SCAN/.codex/hooks.json\" ] && [ ! -L \"$SCAN/.codex\" ] && [ ! -L \"$SCAN/.codex/hooks\" ] && [ -f \"$SCAN/.codex/hooks/pretool-guard.sh\" ] && [ -x \"$SCAN/.codex/hooks/pretool-guard.sh\" ] && [ ! -L \"$SCAN/.codex/hooks/pretool-guard.sh\" ]; then PROJECT_ROOT=\"$SCAN\"; break; fi; SCAN=\"$(dirname \"$SCAN\")\"; done; if [ -z \"$PROJECT_ROOT\" ]; then printf \"%s\\n\" \"workspace harness root could not be resolved\" >&2; exit 2; fi; HANDLER=\"$PROJECT_ROOT/.codex/hooks/pretool-guard.sh\"; if [ ! -f \"$HANDLER\" ] || [ ! -x \"$HANDLER\" ] || [ -L \"$HANDLER\" ]; then printf \"%s\\n\" \"workspace harness handler is unavailable\" >&2; exit 2; fi; WORKSPACE_BUILDER_PROJECT_ROOT=\"$PROJECT_ROOT\" bash \"$HANDLER\" || exit 2"
+            },
+            {
+              "event": "PreToolUse",
+              "matcher": "^(apply_patch|Write|Edit|write_file|edit_file|Bash|shell|exec_command)$",
+              "command": "SCAN=\"${CODEX_PROJECT_DIR:-$PWD}\"; PROJECT_ROOT=\"\"; while [ \"$SCAN\" != \"/\" ]; do if [ -f \"$SCAN/.codex/hooks.json\" ] && [ ! -L \"$SCAN/.codex/hooks.json\" ] && [ ! -L \"$SCAN/.codex\" ] && [ ! -L \"$SCAN/.codex/hooks\" ] && [ -f \"$SCAN/.codex/hooks/config-guard.sh\" ] && [ -x \"$SCAN/.codex/hooks/config-guard.sh\" ] && [ ! -L \"$SCAN/.codex/hooks/config-guard.sh\" ]; then PROJECT_ROOT=\"$SCAN\"; break; fi; SCAN=\"$(dirname \"$SCAN\")\"; done; if [ -z \"$PROJECT_ROOT\" ]; then printf \"%s\\n\" \"workspace harness root could not be resolved\" >&2; exit 2; fi; HANDLER=\"$PROJECT_ROOT/.codex/hooks/config-guard.sh\"; if [ ! -f \"$HANDLER\" ] || [ ! -x \"$HANDLER\" ] || [ -L \"$HANDLER\" ]; then printf \"%s\\n\" \"workspace harness handler is unavailable\" >&2; exit 2; fi; WORKSPACE_BUILDER_PROJECT_ROOT=\"$PROJECT_ROOT\" bash \"$HANDLER\" || exit 2"
+            },
+            {
+              "event": "Stop",
+              "matcher": "",
+              "command": "SCAN=\"${CODEX_PROJECT_DIR:-$PWD}\"; PROJECT_ROOT=\"\"; while [ \"$SCAN\" != \"/\" ]; do if [ -f \"$SCAN/.codex/hooks.json\" ] && [ ! -L \"$SCAN/.codex/hooks.json\" ] && [ ! -L \"$SCAN/.codex\" ] && [ ! -L \"$SCAN/.codex/hooks\" ] && [ -f \"$SCAN/.codex/hooks/stop-verify.sh\" ] && [ -x \"$SCAN/.codex/hooks/stop-verify.sh\" ] && [ ! -L \"$SCAN/.codex/hooks/stop-verify.sh\" ]; then PROJECT_ROOT=\"$SCAN\"; break; fi; SCAN=\"$(dirname \"$SCAN\")\"; done; if [ -z \"$PROJECT_ROOT\" ]; then printf \"%s\\n\" \"workspace harness root could not be resolved\" >&2; exit 2; fi; HANDLER=\"$PROJECT_ROOT/.codex/hooks/stop-verify.sh\"; if [ ! -f \"$HANDLER\" ] || [ ! -x \"$HANDLER\" ] || [ -L \"$HANDLER\" ]; then printf \"%s\\n\" \"workspace harness handler is unavailable\" >&2; exit 2; fi; WORKSPACE_BUILDER_PROJECT_ROOT=\"$PROJECT_ROOT\" bash \"$HANDLER\" || exit 2"
+            },
+            {
+              "event": "SessionStart",
+              "matcher": "",
+              "command": "SCAN=\"${CODEX_PROJECT_DIR:-$PWD}\"; PROJECT_ROOT=\"\"; while [ \"$SCAN\" != \"/\" ]; do if [ -f \"$SCAN/.codex/hooks.json\" ] && [ ! -L \"$SCAN/.codex/hooks.json\" ] && [ ! -L \"$SCAN/.codex\" ] && [ ! -L \"$SCAN/.codex/hooks\" ] && [ -f \"$SCAN/.codex/hooks/session-recovery.sh\" ] && [ -x \"$SCAN/.codex/hooks/session-recovery.sh\" ] && [ ! -L \"$SCAN/.codex/hooks/session-recovery.sh\" ]; then PROJECT_ROOT=\"$SCAN\"; break; fi; SCAN=\"$(dirname \"$SCAN\")\"; done; if [ -z \"$PROJECT_ROOT\" ]; then printf \"%s\\n\" \"workspace harness root could not be resolved\" >&2; exit 2; fi; HANDLER=\"$PROJECT_ROOT/.codex/hooks/session-recovery.sh\"; if [ ! -f \"$HANDLER\" ] || [ ! -x \"$HANDLER\" ] || [ -L \"$HANDLER\" ]; then printf \"%s\\n\" \"workspace harness handler is unavailable\" >&2; exit 2; fi; WORKSPACE_BUILDER_PROJECT_ROOT=\"$PROJECT_ROOT\" bash \"$HANDLER\" || exit 2"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

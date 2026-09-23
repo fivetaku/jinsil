@@ -1,0 +1,52 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "SCAN=\"${CODEX_PROJECT_DIR:-$PWD}\"; PROJECT_ROOT=\"\"; while [ \"$SCAN\" != \"/\" ]; do if [ -f \"$SCAN/.codex/hooks.json\" ] && [ ! -L \"$SCAN/.codex/hooks.json\" ] && [ ! -L \"$SCAN/.codex\" ] && [ ! -L \"$SCAN/.codex/hooks\" ] && [ -f \"$SCAN/.codex/hooks/pretool-guard.sh\" ] && [ -x \"$SCAN/.codex/hooks/pretool-guard.sh\" ] && [ ! -L \"$SCAN/.codex/hooks/pretool-guard.sh\" ]; then PROJECT_ROOT=\"$SCAN\"; break; fi; SCAN=\"$(dirname \"$SCAN\")\"; done; if [ -z \"$PROJECT_ROOT\" ]; then printf \"%s\\n\" \"workspace harness root could not be resolved\" >&2; exit 2; fi; HANDLER=\"$PROJECT_ROOT/.codex/hooks/pretool-guard.sh\"; if [ ! -f \"$HANDLER\" ] || [ ! -x \"$HANDLER\" ] || [ -L \"$HANDLER\" ]; then printf \"%s\\n\" \"workspace harness handler is unavailable\" >&2; exit 2; fi; WORKSPACE_BUILDER_PROJECT_ROOT=\"$PROJECT_ROOT\" bash \"$HANDLER\" || exit 2",
+            "timeout": 60,
+            "statusMessage": "Checking irreversible command and PII policy"
+          }
+        ],
+        "matcher": "^(Bash|shell|exec_command)$"
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "SCAN=\"${CODEX_PROJECT_DIR:-$PWD}\"; PROJECT_ROOT=\"\"; while [ \"$SCAN\" != \"/\" ]; do if [ -f \"$SCAN/.codex/hooks.json\" ] && [ ! -L \"$SCAN/.codex/hooks.json\" ] && [ ! -L \"$SCAN/.codex\" ] && [ ! -L \"$SCAN/.codex/hooks\" ] && [ -f \"$SCAN/.codex/hooks/config-guard.sh\" ] && [ -x \"$SCAN/.codex/hooks/config-guard.sh\" ] && [ ! -L \"$SCAN/.codex/hooks/config-guard.sh\" ]; then PROJECT_ROOT=\"$SCAN\"; break; fi; SCAN=\"$(dirname \"$SCAN\")\"; done; if [ -z \"$PROJECT_ROOT\" ]; then printf \"%s\\n\" \"workspace harness root could not be resolved\" >&2; exit 2; fi; HANDLER=\"$PROJECT_ROOT/.codex/hooks/config-guard.sh\"; if [ ! -f \"$HANDLER\" ] || [ ! -x \"$HANDLER\" ] || [ -L \"$HANDLER\" ]; then printf \"%s\\n\" \"workspace harness handler is unavailable\" >&2; exit 2; fi; WORKSPACE_BUILDER_PROJECT_ROOT=\"$PROJECT_ROOT\" bash \"$HANDLER\" || exit 2",
+            "timeout": 60,
+            "statusMessage": "Protecting Codex hook configuration"
+          }
+        ],
+        "matcher": "^(apply_patch|Write|Edit|write_file|edit_file|Bash|shell|exec_command)$"
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "SCAN=\"${CODEX_PROJECT_DIR:-$PWD}\"; PROJECT_ROOT=\"\"; while [ \"$SCAN\" != \"/\" ]; do if [ -f \"$SCAN/.codex/hooks.json\" ] && [ ! -L \"$SCAN/.codex/hooks.json\" ] && [ ! -L \"$SCAN/.codex\" ] && [ ! -L \"$SCAN/.codex/hooks\" ] && [ -f \"$SCAN/.codex/hooks/stop-verify.sh\" ] && [ -x \"$SCAN/.codex/hooks/stop-verify.sh\" ] && [ ! -L \"$SCAN/.codex/hooks/stop-verify.sh\" ]; then PROJECT_ROOT=\"$SCAN\"; break; fi; SCAN=\"$(dirname \"$SCAN\")\"; done; if [ -z \"$PROJECT_ROOT\" ]; then printf \"%s\\n\" \"workspace harness root could not be resolved\" >&2; exit 2; fi; HANDLER=\"$PROJECT_ROOT/.codex/hooks/stop-verify.sh\"; if [ ! -f \"$HANDLER\" ] || [ ! -x \"$HANDLER\" ] || [ -L \"$HANDLER\" ]; then printf \"%s\\n\" \"workspace harness handler is unavailable\" >&2; exit 2; fi; WORKSPACE_BUILDER_PROJECT_ROOT=\"$PROJECT_ROOT\" bash \"$HANDLER\" || exit 2",
+            "timeout": 60,
+            "statusMessage": "Verifying recovery contract"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "SCAN=\"${CODEX_PROJECT_DIR:-$PWD}\"; PROJECT_ROOT=\"\"; while [ \"$SCAN\" != \"/\" ]; do if [ -f \"$SCAN/.codex/hooks.json\" ] && [ ! -L \"$SCAN/.codex/hooks.json\" ] && [ ! -L \"$SCAN/.codex\" ] && [ ! -L \"$SCAN/.codex/hooks\" ] && [ -f \"$SCAN/.codex/hooks/session-recovery.sh\" ] && [ -x \"$SCAN/.codex/hooks/session-recovery.sh\" ] && [ ! -L \"$SCAN/.codex/hooks/session-recovery.sh\" ]; then PROJECT_ROOT=\"$SCAN\"; break; fi; SCAN=\"$(dirname \"$SCAN\")\"; done; if [ -z \"$PROJECT_ROOT\" ]; then printf \"%s\\n\" \"workspace harness root could not be resolved\" >&2; exit 2; fi; HANDLER=\"$PROJECT_ROOT/.codex/hooks/session-recovery.sh\"; if [ ! -f \"$HANDLER\" ] || [ ! -x \"$HANDLER\" ] || [ -L \"$HANDLER\" ]; then printf \"%s\\n\" \"workspace harness handler is unavailable\" >&2; exit 2; fi; WORKSPACE_BUILDER_PROJECT_ROOT=\"$PROJECT_ROOT\" bash \"$HANDLER\" || exit 2",
+            "timeout": 60,
+            "statusMessage": "Checking recovery state"
+          }
+        ]
+      }
+    ]
+  }
+}

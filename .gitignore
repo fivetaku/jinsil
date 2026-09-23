@@ -1,0 +1,46 @@
+# Claude Code
+.claude/settings.local.json
+
+# 비밀키/환경 변수 (R16.5 보안 P0)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+credentials/
+
+# PII 3중 방어 (R23, 07-SECURITY_SECRETS.md) — 1·2단: 키워드 + 전용 폴더.
+# 3단(문서 확장자 catch-all)은 도메인에 따라 산출물과 겹칠 수 있어 주석 제공 —
+# PII 문서를 다루는 워크스페이스(계약서·신분증 등)는 반드시 주석 해제하거나 경로를 좁혀 적용.
+*주민*
+*계좌*
+*통장*
+*신분증*
+*개인정보*
+pii/
+private/
+# *.pdf
+# *.hwp
+# *.hwpx
+# *.docx
+# *.xlsx
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# 임시 파일
+*.tmp
+*.temp
+
+# jinsil
+node_modules/
+.wrangler/
+server/.dev.vars
+*.tgz
