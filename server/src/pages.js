@@ -128,10 +128,9 @@ export async function home(req, env) {
   return html(layout('클진요 — 클로드에게 진실을 요구합니다', `
 <section class="band"><div class="wrap"><h1>클로드에게 진실을 요구합니다</h1><p class="join">터미널에서 <code>npx jinsil setup</code> 한 번이면 끝. 이후 평소처럼 Claude Code(터미널·IDE·SDK)를 쓰면 됩니다 <a href="/methodology">어떻게 계산하나요?</a></p><p class="live">지금 <b>${s.measuring.users}명</b>이 PC ${s.measuring.devices}대에서 측정 중 · 한도 창(5시간·주간) 단위로 자동 집계</p></div></section>
 <main class="wrap" id="stats">
-  <div class="panel notice"><b>공지 (2026-09-24) · 0.2 측정 방식 변경</b> — 요청 경로에 끼어들던 0.1 기록기를 걷어내고, 대화 파일과 한도 게이지로 한도 창 단위를 계산하도록 바꿨습니다. 계산 방식이 달라 0.1.x 기록은 초기화했습니다. 기존 참여자는 <code>npx jinsil@latest setup</code>을 한 번 다시 실행해 주세요.</div>
   <div class="caution"><b>측정 주의</b><ul>
     <li>같은 계정으로 claude.ai 채팅·모바일·다른 PC를 함께 쓰면 게이지만 올라 값이 낮게 나옵니다 — 이런 창은 "외부 사용 의심"으로 통계에서 뺍니다.</li>
-    <li>여러 계정을 돌려 쓰는 풀·라우터 경유 사용은 계정을 나눌 수 없어 기본 집계에서 빠집니다(풀 사용자는 <code>--proxy</code> 모드).</li>
+    <li>여러 계정을 돌려 쓰는 풀(teamclaude) 사용자는 <code>npx jinsil setup --teamclaude</code>로 풀 로그에서 계정별로 집계합니다.</li>
     <li>참여자가 로컬에서 관측해 제출한 값이며, 금액은 API 정가 환산 추정치입니다(실제 청구액 아님).</li></ul></div>
   <div class="lead"><h2>구독료 <mark>1달러로</mark> 얼마나 쓸 수 있나</h2><p>${esc(s.note)}${s.price_status === 'provisional' ? ' · 단가 잠정' : ''}</p></div>
   <div class="cards">${plans.map(p => planCard(p, s.stickers, best)).join('')}</div>
