@@ -58,6 +58,9 @@ async function route(req, env) {
         await env.DB.batch([
           env.DB.prepare('DELETE FROM interval_tokens WHERE interval_id IN (SELECT interval_id FROM intervals WHERE account_fp IN (SELECT account_fp FROM claude_accounts WHERE user_id = ?))').bind(user.id),
           env.DB.prepare('DELETE FROM intervals WHERE account_fp IN (SELECT account_fp FROM claude_accounts WHERE user_id = ?)').bind(user.id),
+          env.DB.prepare('DELETE FROM usage_bins WHERE account_fp IN (SELECT account_fp FROM claude_accounts WHERE user_id = ?)').bind(user.id),
+          env.DB.prepare('DELETE FROM gauge_samples WHERE account_fp IN (SELECT account_fp FROM claude_accounts WHERE user_id = ?)').bind(user.id),
+          env.DB.prepare('DELETE FROM windows WHERE account_fp IN (SELECT account_fp FROM claude_accounts WHERE user_id = ?)').bind(user.id),
           env.DB.prepare('DELETE FROM flags WHERE account_fp IN (SELECT account_fp FROM claude_accounts WHERE user_id = ?)').bind(user.id),
           env.DB.prepare('DELETE FROM account_stats WHERE account_fp IN (SELECT account_fp FROM claude_accounts WHERE user_id = ?)').bind(user.id),
           env.DB.prepare('DELETE FROM claude_accounts WHERE user_id = ?').bind(user.id),

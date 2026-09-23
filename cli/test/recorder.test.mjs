@@ -43,7 +43,7 @@ test({ skip: process.platform === 'win32' && '프록시 모드 검증은 openssl
   });
   try {
     await once(child.stdout, 'data');
-    const port = execFileSync('/usr/sbin/lsof', ['-nP', '-a', '-p', String(child.pid), '-iTCP', '-sTCP:LISTEN', '-Fn'], { encoding: 'utf8' }).match(/n127\.0\.0\.1:(\d+)/)[1];
+    const port = execFileSync('lsof', ['-nP', '-a', '-p', String(child.pid), '-iTCP', '-sTCP:LISTEN', '-Fn'], { encoding: 'utf8' }).match(/n127\.0\.0\.1:(\d+)/)[1];
     for (const auth of [`Bearer ${SECRET}`, `Bearer ${SECRET}`, null]) {
       const r = await fetch(`http://127.0.0.1:${port}/v1/messages`, { method: 'POST', headers: auth ? { authorization: auth } : {}, body: '{}' });
       await r.text();

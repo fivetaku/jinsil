@@ -65,7 +65,7 @@ test('setup --yes: 동의 v2 기록·자동 제출 켬, 0.1.x가 넣은 별칭 �
   assert.ok(text.startsWith(user), '사용자 줄 보존');
   assert.ok(!/jinsil claude/.test(text), '0.1 별칭 제거');
   assert.equal(text.split('# >>> jinsil >>>').length - 1, 1);
-  assert.ok(text.includes(`export PATH="${path.join(d, 'home', 'bin')}":"$PATH"`));
+  assert.ok(text.includes(`export PATH="${path.join(d, 'home', 'bin').replace(/\\/g, '\\\\')}":"$PATH"`));
   const cfg = cfgOf(d);
   assert.equal(cfg.consent_version, 2); assert.ok(cfg.consent_v2_at); assert.equal(cfg.auto_submit, true);
   const shim = path.join(d, 'home', 'bin', process.platform === 'win32' ? 'jinsil.cmd' : 'jinsil');

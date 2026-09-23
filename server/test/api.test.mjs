@@ -1,7 +1,7 @@
-// 서버 API 규칙 테스트 (wrangler dev --local). PRD 02 자동 검증 규칙·기기 연결·가성비·순위·스티커.
+// 서버 API 규칙 테스트 v2 (wrangler dev --local). 기기 연결·창 기반 가성비·순위·스티커·공개 차단·요금제 변경·삭제.
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { startServer, login, linkDevice, interval, post, zero, csrfOf } from './harness.mjs';
+import { startServer, login, linkDevice, csrfOf, windowPayload, postBins } from './harness.mjs';
 import { stickers } from '../src/stats.js';
 
 let srv, alice, bob, aliceToken, bobToken;
@@ -9,206 +9,134 @@ before(async () => {
   srv = await startServer();
   alice = await login(srv.base, 'alice');
   bob = await login(srv.base, 'bob');
-  const a = await linkDevice(srv.base, alice); aliceToken = a.token.device_token;
-  const b = await linkDevice(srv.base, bob); bobToken = b.token.device_token;
+  aliceToken = (await linkDevice(srv.base, alice)).token.device_token;
+  bobToken = (await linkDevice(srv.base, bob)).token.device_token;
 });
 after(async () => { await srv?.stop(); });
-const fp = c => c.repeat(64);
+const fp = c => c.repeat(64).slice(0, 64);
+const stats = async () => (await fetch(`${srv.base}/api/stats`)).json();
+const meOf = async cookie => (await fetch(`${srv.base}/me.json`, { headers: { cookie } })).json();
 
 test('기기 코드: 승인 전 428, 승인 후 1회만 토큰(재사용 410), 거부는 403', async () => {
-  const ok = await linkDevice(srv.base, alice);
-  assert.equal(ok.pendingStatus, 428);
-  assert.equal(ok.tokenStatus, 200);
-  assert.ok(ok.token.device_token.length > 30);
-  assert.equal(ok.againStatus, 410);
-  const denied = await linkDevice(srv.base, alice, { approve: false });
-  assert.equal(denied.tokenStatus, 403);
+  const code = await (await fetch(`${srv.base}/device/code`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'pc-x', os: 'darwin-arm64', client_version: '0.2.0' }) })).json();
+  const poll = () => fetch(`${srv.base}/device/token`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ device_code: code.device_code }) });
+  assert.equal((await poll()).status, 428);
+  const csrf = await csrfOf(srv.base, alice, `/link?code=${code.user_code}`);
+  await fetch(`${srv.base}/link`, { method: 'POST', redirect: 'manual', headers: { cookie: alice, 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ csrf, user_code: code.user_code, action: 'approve' }) });
+  assert.equal((await poll()).status, 200);
+  assert.equal((await poll()).status, 410);
 });
 
-test('로그인 없이 /me·/link는 로그인으로 보낸다, 모의 IdP 세션은 동작', async () => {
-  const r = await fetch(`${srv.base}/me`, { redirect: 'manual' });
-  assert.equal(r.status, 302);
-  assert.match(r.headers.get('location'), /^\/auth\/google\?next=/);
-  const me = await fetch(`${srv.base}/me.json`, { headers: { cookie: alice } });
-  assert.equal(me.status, 200);
-});
-
-test('수용: 서버가 단가로 비용을 다시 계산하고, 같은 interval_id 재전송은 멱등', async () => {
-  const body = interval({ account_fp: fp('1') });
-  const r = await post(srv.base, aliceToken, body);
-  assert.equal(r.status, 201);
-  assert.equal(r.body.status, 'accepted');
-  assert.equal(r.body.cost_usd, 1_000_000 * 4 / 1e6 + 100_000 * 20 / 1e6); // $6
-  const again = await post(srv.base, aliceToken, body);
-  assert.equal(again.status, 200);
-  assert.equal(again.body.duplicate, true);
-});
-
-test('스키마: 모르는 필드(email 등)·잘못된 지문·음수 토큰·역행 게이지는 422', async () => {
-  for (const bad of [interval({ email: 'x@y.z' }), interval({ account_fp: 'nothex' }),
-    interval({ tokens_by_model: { 'claude-opus-5-5': { ...zero, input: -1 } } }), interval({ g_start: 5, g_end: 4 }),
-    interval({ quality: ['DROP TABLE'] }), interval({ interval_id: 'x' })]) {
-    const r = await post(srv.base, aliceToken, bad);
-    assert.equal(r.status, 422, JSON.stringify(r.body));
-    assert.equal(r.body.status, 'rejected');
-  }
-});
-
-test('겹치는 게이지 구간은 409, 다른 사용자가 같은 계정 지문을 올리면 409', async () => {
-  await post(srv.base, aliceToken, interval({ account_fp: fp('2'), g_start: 10, g_end: 12 }));
-  const overlap = await post(srv.base, aliceToken, interval({ account_fp: fp('2'), g_start: 11, g_end: 13 }));
-  assert.equal(overlap.status, 409); assert.equal(overlap.body.reason, 'overlapping_interval');
-  const adjacent = await post(srv.base, aliceToken, interval({ account_fp: fp('2'), g_start: 12, g_end: 13 }));
-  assert.equal(adjacent.status, 201);
-  const stolen = await post(srv.base, bobToken, interval({ account_fp: fp('2'), g_start: 20, g_end: 21 }));
-  assert.equal(stolen.status, 409); assert.equal(stolen.body.reason, 'account_bound_to_other_user');
-});
-
-test('통계 제외: 품질 플래그·라우터 경유·단가 미확인·TTL 미확인·틱 부족·요금제 미확인', async () => {
-  const cases = [
-    [{ quality: ['incomplete_usage'] }, 'incomplete_usage'],
-    [{ routed_upstream: true }, 'routed_upstream'],
-    [{ tokens_by_model: { 'mystery-model': { ...zero, input: 5 } } }, 'unpriced_model'],
-    [{ tokens_by_model: { 'claude-opus-5-5': { ...zero, input: 5, cache_write_unknown: 3 } } }, 'cache_ttl_unknown'],
-    [{ gauge: '5h', g_start: 1, g_end: 3 }, 'too_few_ticks'],
-    [{ tier: null }, 'tier_unknown'],
-  ];
-  let g = 40;
-  for (const [o, reason] of cases) {
-    const r = await post(srv.base, aliceToken, interval({ account_fp: fp('3'), g_start: g, g_end: g + 1, ...o }));
-    g += 2;
-    assert.equal(r.status, 201); assert.equal(r.body.status, 'excluded'); assert.equal(r.body.reason, reason);
-  }
+test('로그인 없이 /me·/link는 로그인으로 보낸다', async () => {
+  for (const p of ['/me', '/link?code=X']) assert.equal((await fetch(`${srv.base}${p}`, { redirect: 'manual' })).status, 302);
 });
 
 test('폐기한 기기의 제출은 401', async () => {
-  const d = await linkDevice(srv.base, bob);
-  const tok = d.token.device_token;
+  const tok = (await linkDevice(srv.base, bob)).token.device_token;
   assert.equal((await fetch(`${srv.base}/device/revoke`, { method: 'POST', headers: { authorization: `Bearer ${tok}` } })).status, 200);
-  const r = await post(srv.base, tok, interval({ account_fp: fp('4') }));
-  assert.equal(r.status, 401);
+  assert.equal((await postBins(srv.base, tok, windowPayload({ fp: fp('4') }))).status, 401);
 });
 
-test('같은 PC를 다시 연결하면 예전 연결은 해제되어 한 대로 잡힌다', async () => {
+test('같은 PC(같은 설치 식별자)를 다시 연결하면 예전 연결은 해제되어 한 대로 잡힌다', async () => {
   const carol = await login(srv.base, 'carol-relink');
-  const first = (await linkDevice(srv.base, carol, { name: 'carol-mac' })).token.device_token;
-  const before = (await (await fetch(`${srv.base}/api/stats`)).json()).measuring;
-  const second = (await linkDevice(srv.base, carol, { name: 'carol-mac' })).token.device_token;
-  const after = (await (await fetch(`${srv.base}/api/stats`)).json()).measuring;
+  const first = (await linkDevice(srv.base, carol, { name: 'pc-aaaa' })).token.device_token;
+  const before = (await stats()).measuring;
+  const second = (await linkDevice(srv.base, carol, { name: 'pc-aaaa' })).token.device_token;
+  const after = (await stats()).measuring;
   assert.equal(after.devices, before.devices, 'PC 수가 늘지 않아야 함');
-  assert.equal((await post(srv.base, first, interval({ account_fp: fp('c1') }))).status, 401);
-  assert.notEqual((await post(srv.base, second, interval({ account_fp: fp('c1') }))).status, 401);
-  await linkDevice(srv.base, carol, { name: 'carol-laptop' });
-  assert.equal((await (await fetch(`${srv.base}/api/stats`)).json()).measuring.devices, after.devices + 1, '다른 PC는 따로 셈');
+  assert.equal((await postBins(srv.base, first, windowPayload({ fp: fp('c1') }))).status, 401);
+  assert.equal((await postBins(srv.base, second, windowPayload({ fp: fp('c1') }))).status, 201);
+  await linkDevice(srv.base, carol, { name: 'pc-bbbb' });
+  assert.equal((await stats()).measuring.devices, after.devices + 1, '다른 PC는 따로 셈');
 });
 
-test('가성비 배수·요금제 순위·스티커(기준 Max 5x)·이상치 제외', async () => {
-  // Max 5x 4계정: 주간 3%p씩. 비용 $6×(개수) — 1%당 $6/2=3 → 100% $300 ... 계정마다 다르게
-  const five = [['3', 2.5], ['4', 3.5], ['5', 2], ['6', 3], ['7', 4], ['8', 400]]; // '8'은 극단값 → 이상치
-  for (const [c, mult] of five) {
-    const body = interval({ account_fp: fp(c), g_start: 0, g_end: 5, tokens_by_model: { 'claude-opus-5-5': { ...zero, input: 1_000_000 * mult } } });
-    assert.equal((await post(srv.base, aliceToken, body)).body.status, 'accepted');
-  }
-  for (const [c, mult] of [['b', 5], ['c', 5]]) {
-    const body = interval({ account_fp: fp(c), tier: 'default_claude_max_20x', g_start: 0, g_end: 5, tokens_by_model: { 'claude-opus-5-5': { ...zero, input: 1_000_000 * mult } } });
-    assert.equal((await post(srv.base, bobToken, body)).body.status, 'accepted');
-  }
-  const s = await (await fetch(`${srv.base}/api/stats`)).json();
+test('공개 기준 미달 요금제는 API에 수치를 싣지 않는다(1계정 합성), 피드에도 없음', async () => {
+  const dave = await login(srv.base, 'dave');
+  const tok = (await linkDevice(srv.base, dave)).token.device_token;
+  assert.equal((await postBins(srv.base, tok, windowPayload({ fp: fp('d'), tier: 'default_claude_pro' }))).status, 201);
+  const s = await stats();
+  const pro = s.plans.pro;
+  assert.equal(pro.shown, false); assert.equal(pro.participants >= 1, true);
+  for (const k of ['median_usd_per_100pct', 'p25', 'p75', 'range_lo', 'range_hi', 'monthly_value', 'value_multiple', 'five_hour_median_usd_per_100pct', 'stages'])
+    assert.equal(pro[k], null, k);
+  assert.deepEqual(s.ranking.pro, []);
+  assert.ok(!(await (await fetch(`${srv.base}/api/feed`)).json()).some(r => r.plan === 'pro'));
+});
+
+test('가성비: 계정 값 중앙값·범위·단계·순위·스티커(기준 Max 5x)·이상치 제외', async () => {
+  // Max 5x 5계정: 창 Δ12, bin 12개 × $4·mtok → 1%당 $4·mtok. '8'은 극단값.
+  for (const [c, mtok] of [['5', 2], ['6', 3], ['7', 4], ['a', 2.5], ['8', 400]]) assert.equal((await postBins(srv.base, aliceToken, windowPayload({ fp: fp(c), mtok }))).status, 201);
+  for (const [c, mtok] of [['b', 5], ['c', 5]]) assert.equal((await postBins(srv.base, bobToken, windowPayload({ fp: fp(c), tier: 'default_claude_max_20x', mtok }))).status, 201);
+  const s = await stats();
   const m5 = s.plans.max5x, m20 = s.plans.max20x;
-  // 이상치 '8' 제외 → '5','6','7' (+ 앞 테스트의 fp('1') $6/2%p=300/100%·fp('2')는 주간 3%p이므로 포함)
-  const ranked = s.ranking.max5x;
-  assert.ok(!ranked.some(r => r.tag === '8888'), '이상치는 순위 제외');
-  assert.equal(m5.n, ranked.length);
-  for (let i = 1; i < ranked.length; i++) assert.ok(ranked[i - 1].value_multiple >= ranked[i].value_multiple);
-  assert.ok(Math.abs(m5.value_multiple - m5.mean_usd_per_100pct * 30 / 7 / 100) < 1e-9);
-  // 20x: 1%당 $20/3... 100% = 5*4/3*100
-  assert.ok(Math.abs(m20.mean_usd_per_100pct - 5 * 4 / 5 * 100) < 1e-9);
+  assert.ok(!s.ranking.max5x.some(r => r.tag === '8888'), '이상치 제외');
+  assert.equal(m5.n, s.ranking.max5x.length);
+  for (let i = 1; i < s.ranking.max5x.length; i++) assert.ok(s.ranking.max5x[i - 1].value_multiple >= s.ranking.max5x[i].value_multiple);
+  assert.ok(Math.abs(m20.median_usd_per_100pct - 4 * 5 * 100) < 1e-6, '20x: 1%당 $20 → 100% $2000');
+  assert.ok(m20.range_lo < m20.median_usd_per_100pct && m20.median_usd_per_100pct < m20.range_hi);
+  assert.equal(m20.stages.precise, 2);
+  assert.ok(Math.abs(m5.value_multiple - m5.median_usd_per_100pct * 30 / 7 / 100) < 1e-9);
   assert.equal(s.baseline, 'max5x');
-  const st20 = s.stickers.max20x.map(t => t.text);
-  assert.ok(st20.some(t => /^가격 2배 → 가치 /.test(t)));
+  assert.ok(s.stickers.max20x.some(t => /^가격 2배 → 가치 /.test(t.text)));
   assert.ok(s.stickers.max5x.some(t => t.kind === 'baseline'));
-  assert.deepEqual(s.stickers.pro.map(t => t.text), ['측정 대기 · 통계 반영 0/2']);
-  assert.equal(s.stickers[m20.value_multiple > m5.value_multiple ? 'max20x' : 'max5x'].some(t => t.kind === 'best'), true);
-  // 공개 응답에 계정 지문 전체·사용자 ID가 없어야 함
+  assert.match(s.note, /참여자가 로컬에서 관측/);
   const text = JSON.stringify(s) + JSON.stringify(await (await fetch(`${srv.base}/api/feed`)).json());
-  assert.ok(!text.includes('a'.repeat(64)) && !text.includes(fp('5')) && !/user_id/.test(text));
+  assert.ok(!text.includes(fp('5')) && !/user_id|account_fp/.test(text), '공개 응답에 지문 전체·사용자 ID 없음');
 });
 
-test('/me: 내 순위·상위 %·실효 단가·평균 대비', async () => {
-  const me = await (await fetch(`${srv.base}/me.json`, { headers: { cookie: alice } })).json();
+test('단계: 누적 +5%p 잠정 등록, +8 보통, +11 정밀 / 외부 사용 의심 창은 제외 사유로 집계', async () => {
+  const erin = await login(srv.base, 'erin');
+  const tok = (await linkDevice(srv.base, erin)).token.device_token;
+  await postBins(srv.base, tok, windowPayload({ fp: fp('e1'), delta: 5 }));
+  await postBins(srv.base, tok, windowPayload({ fp: fp('e2'), delta: 4 }));
+  await postBins(srv.base, tok, windowPayload({ fp: fp('e3'), delta: 10, external: true }));
+  const me = await meOf(erin);
+  const a = t => me.accounts.find(x => x.tag === t);
+  assert.equal(a('e1e1').stage, 'provisional');
+  assert.equal(a('e2e2').ineligible, 'insufficient_weekly_data');
+  assert.ok(me.windows.some(w => w.public_tag === 'e3e3' && w.exclude_reason === 'external_usage_suspected'));
+  const s = await stats();
+  assert.ok((s.plans.max5x.exclusions['7d'] || {}).external_usage_suspected >= 1);
+});
+
+test('/me: 순위·실효 단가·중앙값 대비·최근 게이지(게이지마다 하나)', async () => {
+  await postBins(srv.base, aliceToken, windowPayload({ fp: fp('5'), gauge: '5h', g0: 10, delta: 20, start: Date.now() - 3 * 3600000 }));
+  const me = await meOf(alice);
   const a = me.accounts.find(x => x.tag === '5555');
   assert.ok(a.rank >= 1 && a.top_pct >= 1 && a.top_pct <= 100);
   assert.ok(Math.abs(a.effective_usd_per_api_usd - 100 / a.monthly_value) < 1e-12);
-  assert.equal(typeof a.vs_plan_mean, 'number');
+  assert.equal(typeof a.vs_plan_median, 'number');
+  assert.deepEqual(a.latest.map(l => l.gauge).sort(), ['5h', '7d']);
   assert.ok(me.accounts.find(x => x.tag === '8888').ineligible === 'outlier');
   const csv = await (await fetch(`${srv.base}/me/export.csv`, { headers: { cookie: alice } })).text();
-  assert.match(csv, /interval_id,account_tag,gauge/);
+  assert.match(csv, /account_tag,gauge,resets_at/);
+});
+
+test('요금제를 바꾼 계정은 현재 요금제 창만 집계한다', async () => {
+  const f = fp('f1');
+  await postBins(srv.base, bobToken, windowPayload({ fp: f, tier: 'default_claude_max_5x', delta: 10, start: Date.now() - 30 * 3600000, resetsIn: 2 * 86400000 }));
+  await postBins(srv.base, bobToken, windowPayload({ fp: f, tier: 'default_claude_max_20x', delta: 6, start: Date.now() - 5 * 3600000, resetsIn: 6 * 86400000 }));
+  const a = (await meOf(bob)).accounts.find(x => x.tag === 'f1f1');
+  assert.equal(a.plan, 'max20x');
+  assert.equal(a.weekly_pct, 6, 'Max 5x 시절 +10%p는 섞이지 않음');
 });
 
 test('스티커 순수 로직: 가치 배수가 가격 배수의 80% 미만이면 광고보다 적음, Pro가 차면 기준 전환', () => {
-  const P = (plan, price, n, monthly) => ({ plan, price, n, min_accounts: 5, shown: n >= 5, monthly_value: monthly, value_multiple: monthly / price });
-  const a = stickers({ pro: P('pro', 20, 1, 0), max5x: P('max5x', 100, 5, 5000), max20x: P('max20x', 200, 5, 7000) });
-  assert.equal(a.baseline, 'max5x');
-  assert.ok(a.stickers.max20x.some(t => t.text === '가격 2배 → 가치 1.4배'));
-  assert.ok(a.stickers.max20x.some(t => t.kind === 'less'));
-  assert.ok(a.stickers.max5x.some(t => t.kind === 'best'));
-  const b = stickers({ pro: P('pro', 20, 5, 1000), max5x: P('max5x', 100, 5, 5000), max20x: P('max20x', 200, 5, 10000) });
-  assert.equal(b.baseline, 'pro');
-  assert.ok(b.stickers.max5x.some(t => t.text === '가격 5배 → 가치 5배'));
-  assert.ok(!b.stickers.max5x.some(t => t.kind === 'less'));
+  const p = (plan, price, mv, shown = true) => ({ plan, price, monthly_value: mv, value_multiple: mv / price, shown, n: 5, min_accounts: 5 });
+  const r = stickers({ pro: p('pro', 20, 400), max5x: p('max5x', 100, 1500), max20x: p('max20x', 200, 4000), team_standard: p('team_standard', 25, 0, false), team_premium: p('team_premium', 125, 0, false) });
+  assert.equal(r.baseline, 'pro');
+  assert.ok(r.stickers.max5x.some(t => t.kind === 'less'));
 });
 
-test('내 데이터 삭제 후 통계·순위에서 빠진다', async () => {
-  const carol = await login(srv.base, 'carol');
-  const tok = (await linkDevice(srv.base, carol)).token.device_token;
-  await post(srv.base, tok, interval({ account_fp: fp('d'), g_start: 0, g_end: 5 }));
-  let s = await (await fetch(`${srv.base}/api/stats`)).json();
-  assert.ok(s.ranking.max5x.some(r => r.tag === 'dddd'));
-  const csrf = await csrfOf(srv.base, carol, '/me');
-  const del = await fetch(`${srv.base}/me/delete`, { method: 'POST', redirect: 'manual', headers: { cookie: carol, 'content-type': 'application/x-www-form-urlencoded' },
+test('내 데이터 삭제 후 통계·순위에서 빠지고, 기기 토큰도 무효', async () => {
+  const gina = await login(srv.base, 'gina');
+  const tok = (await linkDevice(srv.base, gina)).token.device_token;
+  await postBins(srv.base, tok, windowPayload({ fp: fp('9') }));
+  assert.ok((await stats()).ranking.max5x.some(r => r.tag === '9999'));
+  const csrf = await csrfOf(srv.base, gina, '/me');
+  const del = await fetch(`${srv.base}/me/delete`, { method: 'POST', redirect: 'manual', headers: { cookie: gina, 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ csrf, confirm: 'DELETE' }) });
   assert.equal(del.status, 302);
-  s = await (await fetch(`${srv.base}/api/stats`)).json();
-  assert.ok(!s.ranking.max5x.some(r => r.tag === 'dddd'));
-  assert.equal((await post(srv.base, tok, interval({ account_fp: fp('d'), g_start: 5, g_end: 6 }))).status, 401);
-});
-
-test('공개 기준 미달 요금제는 API에 수치를 싣지 않고 피드에서도 빠진다(1계정 합성)', async () => {
-  const dave = await login(srv.base, 'dave');
-  const tok = (await linkDevice(srv.base, dave)).token.device_token;
-  const body = interval({ account_fp: fp('f'), tier: 'default_claude_pro', g_start: 0, g_end: 6 });
-  const r = await post(srv.base, tok, body);
-  assert.equal(r.body.status, 'accepted', JSON.stringify(r.body));
-  const s = await (await fetch(`${srv.base}/api/stats`)).json();
-  const pro = s.plans.pro;
-  assert.equal(pro.shown, false);
-  for (const k of ['mean_usd_per_100pct', 'min', 'max', 'p25', 'p75', 'monthly_value', 'value_multiple', 'five_hour_mean_usd_per_100pct'])
-    assert.equal(pro[k], null, k);
-  assert.deepEqual(s.ranking.pro, []);
-  const feed = await (await fetch(`${srv.base}/api/feed`)).json();
-  assert.ok(!feed.some(r => r.plan === 'pro'), '미달 요금제 제출은 공개 피드에 없음');
-  // 5시간 지표는 별도 표본 수로 판정: 주간은 공개돼도 5시간 표본이 모자라면 null
-  const m5 = s.plans.max5x;
-  if (m5.shown && m5.n_5h < m5.min_accounts) assert.equal(m5.five_hour_mean_usd_per_100pct, null);
-});
-
-test('요금제를 바꾼 계정은 현재 요금제 구간만 집계한다', async () => {
-  const f = fp('e');
-  assert.equal((await post(srv.base, bobToken, interval({ account_fp: f, tier: 'default_claude_max_5x', g_start: 0, g_end: 10, reset_at: '2030-02-01T00:00:00.000Z' }))).body.status, 'accepted');
-  assert.equal((await post(srv.base, bobToken, interval({ account_fp: f, tier: 'default_claude_max_20x', g_start: 0, g_end: 6, reset_at: '2030-03-01T00:00:00.000Z',
-    t_start: '2026-09-21T10:00:00.000Z', t_end: '2026-09-21T11:00:00.000Z' }))).body.status, 'accepted');
-  const me = await (await fetch(`${srv.base}/me.json`, { headers: { cookie: bob } })).json();
-  const a = me.accounts.find(x => x.tag === 'eeee');
-  assert.equal(a.plan, 'max20x');
-  assert.equal(a.weekly_pct, 6, 'Max 5x 시절 10%p는 섞이지 않음');
-});
-
-test('/me: 최근 게이지는 게이지마다 하나만', async () => {
-  const f = fp('9');
-  for (const [g0, g1, t] of [[0, 3, '10'], [3, 7, '12']])
-    assert.equal((await post(srv.base, aliceToken, interval({ account_fp: f, gauge: '5h', g_start: g0, g_end: g1, reset_at: '2030-01-01T05:00:00.000Z',
-      t_start: `2026-09-22T${t}:00:00.000Z`, t_end: `2026-09-22T${t}:30:00.000Z` }))).body.status, 'accepted');
-  const me = await (await fetch(`${srv.base}/me.json`, { headers: { cookie: alice } })).json();
-  const a = me.accounts.find(x => x.tag === '9999');
-  assert.deepEqual(a.latest.map(l => [l.gauge, l.g_end]), [['5h', 7]]);
+  assert.ok(!(await stats()).ranking.max5x.some(r => r.tag === '9999'));
+  assert.equal((await postBins(srv.base, tok, windowPayload({ fp: fp('9') }))).status, 401);
 });

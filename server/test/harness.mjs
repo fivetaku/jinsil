@@ -83,3 +83,22 @@ export async function post(base, token, body) {
   return { status: r.status, body: await r.json().catch(() => null) };
 }
 export { zero };
+
+// v2: 한 계정의 한도 창 하나를 만드는 제출 묶음. 게이지 g0→g0+delta 사이 5분 bin마다 opus-5-5 입력 mtok백만 토큰(=$4×mtok).
+const BIN = 300000;
+export function windowPayload({ fp, tier = 'default_claude_max_5x', gauge = '7d', g0 = 0, delta = 12, mtok = 1, bins = 12, start = Date.now() - 20 * 3600000, resetsIn, external = false, collector = 'transcript' }) {
+  const t0 = Math.floor(start / BIN) * BIN;
+  const reset = new Date(t0 + (resetsIn ?? (gauge === '7d' ? 5 * 86400000 : 4 * 3600000))).toISOString();
+  const samples = [{ observed_at: t0, gauge, utilization: g0, resets_at: reset, source: 'usage_api', tier }];
+  const bs = [];
+  if (!external) for (let i = 1; i <= bins; i++) bs.push({ bin_start: t0 + i * BIN, model: 'claude-opus-5-5', input: Math.round(mtok * 1e6), output: 0, cache_read: 0,
+    cache_write_5m: 0, cache_write_1h: 0, cache_write_unknown: 0, messages: 1, sidechain_messages: 0, special: {}, revision: (i.toString(16) + '0'.repeat(16)).slice(0, 16) });
+  const tEnd = t0 + (bins + 1) * BIN;
+  samples.push({ observed_at: tEnd, gauge, utilization: g0 + delta, resets_at: reset, source: 'usage_api', tier });
+  samples.push({ observed_at: tEnd + 10 * 60000, gauge, utilization: g0 + delta, resets_at: reset, source: 'usage_api', tier });
+  return { account_fp: fp, tier, bins: bs, samples, client: { version: '0.2.0', collector } };
+}
+export async function postBins(base, token, body) {
+  const r = await fetch(`${base}/v2/bins`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify(body) });
+  return { status: r.status, body: await r.json().catch(() => null) };
+}

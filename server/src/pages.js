@@ -1,6 +1,6 @@
 // 웹 페이지 (캠페인형 볼드: 노란 슬로건 띠 + 검정 블록 + 흰 데이터 영역). 데이터 영역에는 선동 문구를 두지 않는다.
 import { html, esc, PLAN_LABEL } from './util.js';
-import { publicStats, feed } from './stats.js';
+import { publicStats, feed, EXCLUDE_KO } from './stats.js';
 import { currentUser } from './auth.js';
 
 const usd = (n, d = 0) => n === null || n === undefined ? '—' : `$${Number(n).toLocaleString('en-US', { maximumFractionDigits: d, minimumFractionDigits: d })}`;
@@ -71,12 +71,21 @@ ${user ? '' : '<a class="btn" href="/auth/google?next=/me">Google로 참여</a>'
 <p class="foot">원본은 참여자 PC에만 남습니다 · 서버에는 계산값만</p></body></html>`;
 }
 
+const STAGE_KO = { provisional: '잠정', normal: '보통', precise: '정밀' };
+const stageTxt = st => st ? `${STAGE_KO.precise} ${st.precise} · ${STAGE_KO.normal} ${st.normal} · ${STAGE_KO.provisional} ${st.provisional}` : '';
+const exclTxt = ex => {
+  const all = {};
+  for (const g of Object.values(ex || {})) for (const [r, n] of Object.entries(g)) all[r] = (all[r] || 0) + n;
+  const parts = Object.entries(all).map(([r, n]) => `${EXCLUDE_KO[r] || r} ${n}`);
+  return parts.length ? parts.join(' · ') : '없음';
+};
+
 function planCard(p, sticks, bestPlan) {
   const s = (sticks[p.plan] || []).map(t => `<span class="st ${t.kind}">${esc(t.text)}</span>`).join('');
   const body = p.shown
-    ? `<div class="big">${x(p.value_multiple)}</div><div class="sub">월 최대 ≈ ${usd(p.monthly_value)}</div>
-       <div class="meta">주간 100% ≈ ${usd(p.mean_usd_per_100pct)} · 참여 ${p.n}계정</div>`
-    : `<div class="big muted">구독료의 ?배</div><div class="meta">참여 ${p.participants}계정${p.participants > p.n ? ` (검증 중 ${p.participants - p.n})` : ''} · 공개까지 ${Math.max(0, p.min_accounts - p.n)}계정 더</div>`;
+    ? `<div class="big">${x(p.value_multiple)}</div><div class="sub">30일 환산 ≈ ${usd(p.monthly_value)}</div>
+       <div class="meta">주간 100% 중앙값 ${usd(p.median_usd_per_100pct)} (측정 범위 ${usd(p.range_lo)}~${usd(p.range_hi)}) · ${p.n}계정 · ${stageTxt(p.stages)}</div>`
+    : `<div class="big muted">구독료의 ?배</div><div class="meta">참여 ${p.participants}계정${p.participants > p.n ? ` (검증 중·데이터 부족 ${p.participants - p.n})` : ''} · 공개까지 ${Math.max(0, p.min_accounts - p.n)}계정 더</div>`;
   return `<div class="card ${bestPlan === p.plan ? 'best' : ''}"><div class="hd">${esc(p.label)}<span>월 ${usd(p.price)}</span></div>
     <div class="bd">${body}<div class="stickers">${s}</div></div></div>`;
 }
@@ -87,53 +96,55 @@ export async function home(req, env) {
   const teamPlans = ['team_standard', 'team_premium'].map(k => s.plans[k]).filter(Boolean);
   const allPlans = [...plans, ...teamPlans];
   const best = Object.entries(s.stickers).find(([, v]) => v.some(t => t.kind === 'best'))?.[0];
-  const maxMult = Math.max(1, ...plans.map(p => p.shown ? p.value_multiple : 0));
+  const maxMult = Math.max(1, ...allPlans.map(p => p.shown ? p.value_multiple : 0));
   const bars = allPlans.map(p => p.shown
     ? `<div class="row"><span>${esc(p.label)}</span><div class="bar"><i class="${best === p.plan ? 'hi' : ''}" style="width:${(p.value_multiple / maxMult * 100).toFixed(1)}%"></i></div><span>${x(p.value_multiple)}</span></div>`
     : `<div class="row"><span>${esc(p.label)}</span><div class="bar wait"></div><span style="color:#888">측정 대기</span></div>`).join('');
   const rankTables = allPlans.map(p => {
     const rows = s.ranking[p.plan];
-    return `<div><h3>${esc(p.label)}</h3>${rows.length ? `<table><tr><th>순위</th><th>참여자</th><th>가성비</th><th class="hide-m">주간 100%</th></tr>${rows.slice(0, 10).map(r =>
-      `<tr><td>${r.rank}</td><td>#${esc(r.tag)}</td><td class="num">${(r.value_multiple).toFixed(1)}배</td><td class="num hide-m">${usd(r.usd_per_100pct)}</td></tr>`).join('')}</table>`
-      : `<p class="note">${p.shown ? '아직 순위에 오른 계정이 없습니다(주간 게이지 5%p 이상 필요).' : `측정 대기 — 이 요금제 참여 계정이 ${p.min_accounts}개 이상이면 순위를 공개합니다(현재 ${p.n}).`}</p>`}</div>`;
+    return `<div><h3>${esc(p.label)}</h3>${rows.length ? `<table><tr><th>순위</th><th>참여자</th><th>가성비</th><th class="hide-m">주간 100%</th><th>단계</th></tr>${rows.slice(0, 10).map(r =>
+      `<tr><td>${r.rank}</td><td>#${esc(r.tag)}</td><td class="num">${(r.value_multiple).toFixed(1)}배</td><td class="num hide-m">${usd(r.usd_per_100pct)}</td><td>${STAGE_KO[r.stage] || ''}</td></tr>`).join('')}</table>`
+      : `<p class="note">${p.shown ? '아직 순위에 오른 계정이 없습니다.' : `측정 대기 — 이 요금제 계정이 ${p.min_accounts}개 이상 모이면 순위를 공개합니다(현재 ${p.n}).`}</p>`}</div>`;
   }).join('');
   const feedTable = gauge => {
     const rs = f.filter(r => r.gauge === gauge);
-    return `<table><tr><th>시각(KST)</th><th>참여자</th><th>요금제</th><th>게이지 변화</th><th>상태</th></tr>${rs.length ? rs.map(r => `<tr><td>${kst(r.at)}</td><td><span class="dot ${r.status === 'accepted' ? (r.display.startsWith('검증 중') ? 'g' : '') : r.status === 'flagged' ? 'r' : 'g'}"></span>#${esc(r.tag)}</td>
-    <td>${esc(PLAN_LABEL[r.plan] || '미확인')}</td><td>${esc(r.range)}</td><td>${esc(r.display)}</td></tr>`).join('') : '<tr><td colspan="5" class="note">아직 없습니다.</td></tr>'}</table>`;
+    return `<table><tr><th>갱신(KST)</th><th>참여자</th><th>요금제</th><th>게이지</th><th>상태</th></tr>${rs.length ? rs.map(r => `<tr><td>${kst(r.at)}</td><td><span class="dot ${r.exclude_reason ? 'r' : r.state === 'final' ? '' : 'g'}"></span>#${esc(r.tag)}</td>
+    <td>${esc(PLAN_LABEL[r.plan] || '미확인')}</td><td>${esc(r.range)}</td><td>${esc(r.display)}</td></tr>`).join('') : '<tr><td colspan="5" class="note">아직 없습니다(공개 기준을 채운 요금제만 표시).</td></tr>'}</table>`;
   };
-  const feedRows = `<div class="feeds"><div><h3>주간 게이지</h3>${feedTable('7d')}</div><div><h3>5시간 게이지</h3>${feedTable('5h')}</div></div>
-    <p class="note">구간 하나의 1%당 값은 게이지 반영이 수십 초 늦어 크게 튀므로 싣지 않습니다. 가성비는 계정별로 이어진 구간을 모두 합산해 계산합니다. 새 계정은 24시간 검증 후 통계에 반영됩니다.</p>`;
+  const excl = allPlans.map(p => `<tr><td>${esc(p.label)}</td><td>${esc(exclTxt(p.exclusions))}</td></tr>`).join('');
   return html(layout('클진요 — 클로드에게 진실을 요구합니다', `
-<section class="band"><div class="wrap"><h1>클로드에게 진실을 요구합니다</h1><p class="join">터미널에서 <code>npx jinsil setup</code> 으로 클진요를 설치한 뒤 Claude Code를 사용해 주세요 <a href="/methodology">어떻게 계산하나요?</a></p><p class="live">지금 <b>${s.measuring.users}명</b>이 PC ${s.measuring.devices}대에서 측정 중 · 게이지가 오른 구간부터 자동 제출</p></div></section>
+<section class="band"><div class="wrap"><h1>클로드에게 진실을 요구합니다</h1><p class="join">터미널에서 <code>npx jinsil setup</code> 한 번이면 끝. 이후 평소처럼 Claude Code(터미널·IDE·SDK)를 쓰면 됩니다 <a href="/methodology">어떻게 계산하나요?</a></p><p class="live">지금 <b>${s.measuring.users}명</b>이 PC ${s.measuring.devices}대에서 측정 중 · 한도 창(5시간·주간) 단위로 자동 집계</p></div></section>
 <main class="wrap" id="stats">
   <div class="caution"><b>측정 주의</b><ul>
-    <li>측정 중인 계정으로 claude.ai 채팅·모바일·다른 PC를 함께 쓰면 게이지만 오르고 기록은 안 돼 가치가 낮게 나옵니다.</li>
-    <li>여러 계정을 돌려 쓰는 프록시·라우터 경유 사용은 계정을 나눌 수 없어 집계에서 빠집니다.</li>
-    <li>금액은 API 정가로 환산한 추정치이며 실제 청구액이 아닙니다.</li></ul></div>
+    <li>같은 계정으로 claude.ai 채팅·모바일·다른 PC를 함께 쓰면 게이지만 올라 값이 낮게 나옵니다 — 이런 창은 "외부 사용 의심"으로 통계에서 뺍니다.</li>
+    <li>여러 계정을 돌려 쓰는 풀·라우터 경유 사용은 계정을 나눌 수 없어 기본 집계에서 빠집니다(풀 사용자는 <code>--proxy</code> 모드).</li>
+    <li>참여자가 로컬에서 관측해 제출한 값이며, 금액은 API 정가 환산 추정치입니다(실제 청구액 아님).</li></ul></div>
   <div class="lead"><h2>구독료 <mark>1달러로</mark> 얼마나 쓸 수 있나</h2><p>${esc(s.note)}${s.price_status === 'provisional' ? ' · 단가 잠정' : ''}</p></div>
   <div class="cards">${plans.map(p => planCard(p, s.stickers, best)).join('')}</div>
-  <h3 class="sub">팀 요금제 <small>좌석당 월 결제가 · Standard는 Pro의 1.25배, Premium은 6.25배 사용량(공식 안내)</small></h3>
+  <h3 class="sub">팀 요금제 <small>좌석당 월 결제가 · 요금제 등급 문자열이 실측으로 확인된 뒤 집계</small></h3>
   <div class="cards team">${teamPlans.map(p => planCard(p, s.stickers, best)).join('')}</div>
   <div class="tab">가성비 배수</div><div class="panel bars">${bars}
-    <p class="note">가성비 배수 = (주간 100% 환산 × 30/7, 30일 환산) ÷ 월 구독료. 계정당 한 표로 평균${s.baseline ? ` · 가격→가치 비교 기준: ${esc(PLAN_LABEL[s.baseline])}` : ''}.</p></div>
+    <p class="note">가성비 배수 = (주간 100% 환산 × 30/7, 30일 환산) ÷ 월 구독료. 계정당 한 표, 계정 값의 중앙값${s.baseline ? ` · 가격→가치 비교 기준: ${esc(PLAN_LABEL[s.baseline])}` : ''}. 단계: 주간 게이지 누적 +5%p 잠정 → +8%p 보통 → +11%p 정밀.</p></div>
   <div class="tab">요금제별 순위</div><div class="panel"><div class="ranks">${rankTables}</div>
-    <p class="note">순위가 낮을수록 같은 구독료로 한도를 더 빨리 쓰는 사용 패턴입니다(캐시·출력 비중에 따라 달라짐). 익명 태그만 공개합니다.</p></div>
-  <div class="tab">참여 로그</div><div class="panel">${feedRows}</div>
+    <p class="note">순위가 낮을수록 같은 구독료로 한도를 더 빨리 쓰는 사용 패턴입니다(모델·캐시 구성에 따라 달라짐). 익명 태그만 공개합니다.</p></div>
+  <div class="tab">통계에서 뺀 창</div><div class="panel"><table><tr><th>요금제</th><th>사유별 창 수</th></tr>${excl}</table>
+    <p class="note">제외 기준은 값을 보기 전에 정한 규칙만 씁니다(외부 사용 의심·요금제 변경·비표준 토큰·중복 수집·게이지 상승 5%p 미만).</p></div>
+  <div class="tab">참여 로그</div><div class="panel"><div class="feeds"><div><h3>주간 게이지</h3>${feedTable('7d')}</div><div><h3>5시간 게이지</h3>${feedTable('5h')}</div></div>
+    <p class="note">한도 창 단위로 갱신됩니다. 새 계정은 ${esc(env.PROBATION_HOURS ?? 24)}시간 검증 후 통계에 반영됩니다.</p></div>
 </main>`, { user }), 200, { 'cache-control': 'no-store' });
 }
 
 export async function methodology(req, env) {
   const user = await currentUser(req, env);
   return html(layout('방법론 — 클진요', `<section class="band"><div class="wrap"><h1>방법론</h1></div></section><main class="wrap prose">
-<h2>무엇을 재나</h2><p>Claude 응답 헤더의 한도 게이지(5시간·주간, 정수 %)가 오르는 동안 실제로 쓴 토큰을 모델·항목별로 모읍니다. 게이지가 k%에서 k+n%로 오른 <b>구간</b>의 토큰을 API 정가로 환산해 1%당 비용을 냅니다.</p>
-<h2>주간 100%와 가성비</h2><p>계정별로 수용된 주간 구간의 (비용 합 ÷ 게이지 상승 합) × 100이 그 계정의 <b>주간 100% 환산액</b>입니다. 요금제별로 계정 평균(계정당 한 표)을 내고, × 30/7(30일 환산) = 월 최대 가치, ÷ 월 구독료(Pro $20 · Max 5x $100 · Max 20x $200, 세금은 공통이라 제외) = <b>가성비 배수</b>입니다.</p>
-<p><b>매주 100%를 다 썼을 때의 이론적 상한</b>입니다. 실제로 받는 가치가 아니라 요금제가 허용하는 최대치의 비교입니다. API 정가 환산은 실제 청구액이 아닙니다.</p>
-<h2>스티커</h2><p>가성비 1위(공개된 요금제 2개 이상일 때 최댓값), 구독료의 N배, 가격 N배 → 가치 M배(비교 기준: Pro가 5계정을 채우기 전엔 Max 5x, 이후 Pro), 광고보다 적음(가치 배수가 가격 배수의 80% 미만), 측정 대기(5계정 미만).</p>
-<h2>순위</h2><p>요금제 안에서 계정별 가성비 배수 순입니다. 주간 게이지 합 5%p 이상, 이상치(사분위범위 3배 밖)·검토 중 계정 제외. 같은 요금제라도 캐시·출력 비중에 따라 값이 달라집니다.</p>
-<h2>통계에서 빼는 것</h2><p>기록 누락·중단된 요청, 캐시 보관 시간 미확인, 단가 미확인 모델, 라우터·계정 풀 경유, 요금제 미확인, 5시간 3틱·주간 1틱 미만 구간, 신규 계정 첫 ${esc(env.PROBATION_HOURS ?? 24)}시간. 같은 계정의 구간이 겹치면 거부합니다.</p>
-<h2>한계</h2><p>같은 계정을 웹·모바일·다른 PC에서 함께 쓰면 게이지만 오르고 토큰은 기록되지 않아 1%당 비용이 낮게 나옵니다. 참여 중에는 한 기기에서만 쓰는 것이 정확합니다. 참여자 PC의 기록 진위를 서버가 증명할 방법은 없으며, 이상치 제외와 계정당 한 표로 영향을 줄입니다. 단가는 공식 확인 전 잠정값입니다.</p>
-<h2>개인정보</h2><p>프롬프트·응답·인증값·이메일은 서버로 보내지 않습니다. Claude 계정은 UUID의 해시 지문으로만 구분하고, 공개 화면에는 지문 끝 4자리만 보입니다. 원본 장부는 참여자 PC의 <code>~/.jinsil</code>에만 남습니다.</p></main>`, { user }));
+<h2>무엇을 재나</h2><p>참여자 PC의 수집기(<code>jinsil</code>)가 Claude Code 대화 파일에 남는 <b>사용량 숫자(usage)</b>를 읽고, Claude 사용량 게이지(5시간·주간, %)를 5분마다 조회합니다. 요청 경로에는 끼어들지 않습니다. Anthropic에 직접 간 응답(표준 모델명 + 요청 ID <code>req_</code>)만 셉니다.</p>
+<h2>한도 창 계산</h2><p>게이지가 리셋되는 한 주기(5시간 창·주간 창)마다, 첫 게이지 관측을 기준점으로 게이지 최댓값에 처음 닿은 관측까지 쓴 토큰을 API 정가로 환산해 합산합니다(<b>C</b>). 게이지 상승을 <b>Δ</b>라 하면 1%당 값 = C ÷ Δ입니다. 게이지가 1% 단위라 경계 오차를 범위로 함께 냅니다: [C⁻ ÷ (Δ+1), C⁺ ÷ (Δ−1)] (C⁻는 완전히 안쪽 5분 구간만, C⁺는 경계 구간 포함).</p>
+<h2>단계</h2><p>계정의 주간 창 누적 상승 기준 +5%p에서 <b>잠정</b>으로 등록하고, 창이 커지면 +8%p <b>보통</b>, +11%p <b>정밀</b>로 자동 갱신합니다. 09-23 팀 계정 로그 모의에서 +5%p는 최종값과 중앙 ±23%, +8%p는 모두 ±20% 안, +11%p는 86%가 ±10% 안이었습니다(주간 창 7개로 표본이 작아 운영 데이터로 재검증 예정).</p>
+<h2>주간 100%와 가성비</h2><p>계정별 (Σ비용 ÷ Σ게이지 상승) × 100이 <b>주간 100% 환산액</b>입니다. 요금제별 계정 값의 <b>중앙값</b>(계정당 한 표)에 × 30/7(30일 환산) = 30일 가치, ÷ 월 구독료 = <b>가성비 배수</b>입니다. 매주 100%를 다 썼을 때의 이론적 상한이며 실제 청구액이 아닙니다.</p>
+<h2>통계에서 빼는 것</h2><p>값의 크기로는 빼지 않고, 미리 정한 원인만 뺍니다: 로컬 사용 없이 게이지가 오른 창(외부 사용 의심), 창 도중 요금제 변경, fast 모드·서버 도구 등 표준 요금이 아닌 토큰, 캐시 보관 시간 미확인, 두 PC가 똑같은 기록을 낸 창(중복 수집 의심), 게이지 상승 5%p 미만. 계정 사이에서는 요금제 안 분포의 사분위범위 3배 밖 값(측정 오류 방어)과 신규 계정 첫 ${esc(env.PROBATION_HOURS ?? 24)}시간을 뺍니다. 공개는 요금제별 ${esc(env.MIN_ACCOUNTS ?? 5)}계정 이상일 때만, 5시간 지표는 따로 표본 수를 셉니다.</p>
+<h2>게이지 가중치는 정가 비율과 다르다</h2><p>09-23 실측에서 같은 계정의 5시간 창 1%당 값이 창마다 ±50~80% 흔들렸고, 캐시 읽기 비중이 높을수록 1%당 값이 올라가고(상관 +0.57) Sonnet 비중이 높을수록 내려갔습니다(−0.47). 게이지가 토큰 종류를 API 정가와 다른 비율로 센다는 뜻이라, 요금제 비교에는 참여자들의 사용 구성이 섞입니다.</p>
+<h2>한계</h2><p>참여자가 제출한 값의 진위를 서버가 증명할 방법은 없습니다(참여자 로컬 관측값). 계정 풀·라우터 사용은 기본 집계에서 빠지고, claude.ai 웹·앱 사용은 보이지 않습니다. 단가는 공식 확인 전 잠정값이며, 쓴 단가표는 해시로 남겨 다시 계산할 수 있습니다.</p>
+<h2>개인정보</h2><p>프롬프트·응답 본문, 파일 경로, 요청 ID, 호스트명, 이메일, 인증값은 서버로 보내지 않습니다. 서버에는 5분 단위 모델별 토큰 합계, 게이지 값, Claude 계정의 해시 지문, 요금제 등급이 갑니다(5분 단위 시각 포함). 공개 화면에는 지문 끝 4자리만 보입니다. 로그인 토큰은 <code>api.anthropic.com</code>에만 보냅니다.</p></main>`, { user }));
 }
 
 export async function link(req, env, user, pending) {
@@ -151,65 +162,65 @@ export async function linkDone(req, env, ok, approved) {
 }
 
 function sparkline(points) {
-  if (points.length < 2) return '<p class="note">추이를 그리려면 수용된 주간 구간이 2개 이상 필요합니다.</p>';
+  if (points.length < 2) return '<p class="note">추이를 그리려면 주간 창이 2개 이상 필요합니다.</p>';
   const w = 560, h = 90, vs = points.map(p => p.v), min = Math.min(...vs), max = Math.max(...vs), span = max - min || 1;
   const d = points.map((p, i) => `${(i / (points.length - 1) * (w - 10) + 5).toFixed(1)},${(h - 8 - (p.v - min) / span * (h - 16)).toFixed(1)}`).join(' ');
-  return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" width="100%" height="${h}" role="img" aria-label="주간 1%당 비용 추이"><polyline fill="none" stroke="#111" stroke-width="3" points="${d}"/></svg>
-  <p class="note">주간 구간 기준 · 최저 ${usd(min, 2)} · 최고 ${usd(max, 2)} / 1% (${points.length}구간)</p>`;
+  return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" width="100%" height="${h}" role="img" aria-label="주간 100% 환산 추이"><polyline fill="none" stroke="#111" stroke-width="3" points="${d}"/></svg>
+  <p class="note">주간 창 기준 · 최저 ${usd(min)} · 최고 ${usd(max)} / 100% (${points.length}창)</p>`;
 }
+
+const winState = w => w.exclude_reason ? `제외 · ${EXCLUDE_KO[w.exclude_reason] || w.exclude_reason}` : `${STAGE_KO[w.stage]} · ${w.state === 'final' ? '확정' : '진행 중'}`;
 
 export async function me(req, env, user, data) {
   const accounts = data.accounts.length ? data.accounts.map(a => {
-    const why = { insufficient_weekly_data: '주간 게이지 5%p 이상 쌓이면 순위에 들어갑니다', probation: '신규 계정 검증 기간', flagged: '검토 중', outlier: '같은 요금제 분포에서 크게 벗어나 검토 중', plan_unknown: '요금제 확인 불가' }[a.ineligible] || '';
+    const why = { insufficient_weekly_data: `주간 게이지 누적 +${a.min_weekly_pct}%p부터 등록됩니다(현재 +${a.weekly_pct}%p)`, probation: '신규 계정 검증 기간', flagged: '검토 중', outlier: '같은 요금제 분포에서 크게 벗어나 검토 중', plan_unknown: '요금제 확인 불가(등급 문자열 미확인)' }[a.ineligible] || '';
     const latest = a.latest.map(l => `${gaugeLabel(l.gauge)} ${l.g_end}%`).join(' · ');
-    return `<div class="tab">Claude 계정 #${esc(a.tag)} · ${esc(PLAN_LABEL[a.plan] || '요금제 미확인')}</div><div class="panel">
+    return `<div class="tab">Claude 계정 #${esc(a.tag)} · ${esc(PLAN_LABEL[a.plan] || '요금제 미확인')}${a.stage ? ` · ${STAGE_KO[a.stage]}` : ''}</div><div class="panel">
     <div class="kpis"><div class="kpi"><b>${a.rank ? `${a.rank}위` : '—'}</b><span>${a.rank ? `${esc(PLAN_LABEL[a.plan])} ${a.n_in_plan}명 중 · 상위 ${a.top_pct}%` : esc(why)}</span></div>
     <div class="kpi"><b>${a.value_multiple ? `${a.value_multiple.toFixed(1)}배` : '—'}</b><span>내 가성비 배수</span></div>
     <div class="kpi"><b>${a.effective_usd_per_api_usd ? `${(a.effective_usd_per_api_usd * 100).toFixed(2)}¢` : '—'}</b><span>API 1달러어치를 쓰는 실효 단가</span></div>
-    <div class="kpi"><b>${a.usd_per_100pct ? usd(a.usd_per_100pct) : '—'}</b><span>${a.usd_per_100pct ? '' : `데이터 부족(주간 ${a.weekly_pct}/${a.min_weekly_pct}%p) · `}내 주간 100% 환산${a.vs_plan_mean !== null ? ` · 요금제 평균 대비 ${a.vs_plan_mean >= 0 ? '+' : ''}${(a.vs_plan_mean * 100).toFixed(0)}%` : ''}</span></div></div>
-    <p class="note">최근 제출 기준 게이지: ${esc(latest || '—')} · 근거 주간 게이지 ${a.weekly_pct}%p</p></div>`;
-  }).join('') : '<div class="panel"><b>아직 제출된 구간이 없습니다.</b> 터미널에서 <code>npx jinsil setup</code> 후 평소처럼 <code>claude</code>로 작업하면 게이지가 오른 구간이 자동으로 제출됩니다.</div>';
-  // 5시간 1%와 주간 1%는 단위가 달라 섞지 않는다 — 추이는 주간 구간만.
-  const accepted = data.intervals.filter(i => i.status === 'accepted' && i.usd_per_pct !== null && i.gauge === '7d').slice().reverse();
-  const series = accepted.map(i => ({ v: i.usd_per_pct }));
-  const reasonKo = r => ({ too_few_ticks: '게이지 상승 부족', routed_upstream: '라우터 경유', cache_ttl_unknown: '캐시 보관시간 미확인', unpriced_model: '단가 미확인 모델', incomplete_usage: '기록 불완전', tier_unknown: '요금제 미확인', daily_interval_cap: '일일 한도 초과', pending_or_interrupted_requests: '중단된 요청', import_selection_bias: '가져오기 표본 편향' }[r] || r || '');
-  const histTable = gauge => {
-    const rs = data.intervals.filter(i => i.gauge === gauge).slice(0, 40);
-    return `<table><tr><th>구간 끝(KST)</th><th>계정</th><th>게이지</th><th>요청</th><th>상태</th></tr>${rs.length ? rs.map(i => `<tr><td>${kst(i.t_end)}</td><td>#${esc(i.public_tag)}</td><td>${i.g_start}%→${i.g_end}%</td>
-    <td class="num">${i.requests}</td><td>${i.status === 'accepted' ? '수용' : i.status === 'flagged' ? '검토 중' : `제외 · ${esc(reasonKo(i.exclude_reason))}`}</td></tr>`).join('') : '<tr><td colspan="5" class="note">없음</td></tr>'}</table>`;
+    <div class="kpi"><b>${a.usd_per_100pct ? usd(a.usd_per_100pct) : '—'}</b><span>내 주간 100% 환산${a.usd_per_100pct ? ` (범위 ${usd(a.range_lo)}~${usd(a.range_hi)})` : ''}${a.vs_plan_median !== null ? ` · 요금제 중앙값 대비 ${a.vs_plan_median >= 0 ? '+' : ''}${(a.vs_plan_median * 100).toFixed(0)}%` : ''}</span></div></div>
+    <p class="note">최근 게이지: ${esc(latest || '—')} · 근거 주간 게이지 +${a.weekly_pct}%p (${a.windows}창)</p></div>`;
+  }).join('') : '<div class="panel"><b>아직 제출된 데이터가 없습니다.</b> 터미널에서 <code>npx jinsil setup</code> 후 평소처럼 Claude Code를 쓰면 한도 창 단위로 자동 집계됩니다.</div>';
+  const weekly = data.windows.filter(w => w.gauge === '7d' && !w.exclude_reason && w.usd_per_pct !== null).slice().reverse();
+  const series = weekly.map(w => ({ v: w.usd_per_pct * 100 }));
+  const winTable = gauge => {
+    const rs = data.windows.filter(w => w.gauge === gauge).slice(0, 40);
+    return `<table><tr><th>창 리셋(KST)</th><th>계정</th><th>게이지</th><th>1%당(범위)</th><th>상태</th></tr>${rs.length ? rs.map(w => `<tr><td>${kst(w.resets_at)}</td><td>#${esc(w.public_tag)}</td><td>${w.g_base}%→${w.g_end}%</td>
+    <td class="num">${w.usd_per_pct === null ? '—' : `${usd(w.usd_per_pct, 2)} (${usd(w.usd_per_pct_lo, 2)}~${usd(w.usd_per_pct_hi, 2)})`}</td><td>${esc(winState(w))}</td></tr>`).join('') : '<tr><td colspan="5" class="note">없음</td></tr>'}</table>`;
   };
-  const rows = `<div class="feeds"><div><h3>주간 게이지</h3>${histTable('7d')}</div><div><h3>5시간 게이지</h3>${histTable('5h')}</div></div>
-    <p class="note">구간별 1%당 값은 게이지 반영 지연으로 튀어서 표시하지 않습니다. 위 카드의 값은 이어진 구간 전체를 합산한 결과입니다.</p>`;
-  const devs = data.devices.map(d => `<tr><td>${esc(d.name)}</td><td>${esc(d.os)}</td><td>${d.last_seen ? kst(new Date(d.last_seen).toISOString()) : '—'}</td>
+  const devs = data.devices.map(d => `<tr><td>${esc(d.name)}</td><td>${esc(d.os)}${d.collector ? ` · ${d.collector === 'proxy' ? '프록시' : '대화 파일'}` : ''}</td><td>${d.last_seen ? kst(new Date(d.last_seen).toISOString()) : '—'}</td>
     <td>${d.revoked_at ? '해제됨' : `<form method="post" action="/me/devices/revoke"><input type="hidden" name="csrf" value="${esc(user.csrf)}"><input type="hidden" name="device_id" value="${esc(d.id)}"><button class="btn ghost">연결 해제</button></form>`}</td></tr>`).join('');
   return html(layout('내 대시보드 — 클진요', `<main class="wrap"><div class="lead"><h2>내 대시보드</h2><p>얼마나 비싸게 쓰고 있는지 · 같은 요금제에서 몇 위인지</p></div>
 ${accounts}
-<div class="tab">주간 1%당 비용 추이</div><div class="panel">${sparkline(series)}</div>
-<div class="tab">제출 이력</div><div class="panel">${rows}
+<div class="tab">주간 100% 환산 추이</div><div class="panel">${sparkline(series)}</div>
+<div class="tab">한도 창</div><div class="panel"><div class="feeds"><div><h3>주간</h3>${winTable('7d')}</div><div><h3>5시간</h3>${winTable('5h')}</div></div>
+<p class="note">창이 커질수록 범위가 좁아지고 단계가 올라갑니다(+5%p 잠정 → +8%p 보통 → +11%p 정밀).</p>
 <p class="noprint" style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap"><a class="btn" href="/me/export.csv">CSV 내려받기</a><a class="btn ghost" href="/me/report">이의제기용 리포트(PDF로 저장)</a></p></div>
-<div class="tab">연결된 PC</div><div class="panel"><table><tr><th>이름</th><th>OS</th><th>마지막 제출</th><th></th></tr>${devs || '<tr><td colspan="4" class="note">없음</td></tr>'}</table></div>
+<div class="tab">연결된 PC</div><div class="panel"><table><tr><th>이름</th><th>OS · 수집 방식</th><th>마지막 제출</th><th></th></tr>${devs || '<tr><td colspan="4" class="note">없음</td></tr>'}</table></div>
 <div class="panel noprint"><form method="post" action="/me/delete" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><input type="hidden" name="csrf" value="${esc(user.csrf)}">
 <b>내 데이터 전체 삭제</b><input name="confirm" placeholder="DELETE 입력" style="padding:8px;border:2px solid #111"><button class="btn dark">삭제</button><span class="note">공개 통계·순위에서도 빠집니다. 로컬 기록은 PC에서 <code>jinsil uninstall --purge</code>.</span></form>
 <form method="post" action="/auth/logout" style="margin-top:10px"><button class="btn ghost">로그아웃</button></form></div></main>`, { user }), 200, { 'cache-control': 'no-store' });
 }
 
 export function exportCsv(data) {
-  const head = ['interval_id', 'account_tag', 'gauge', 'g_start', 'g_end', 't_start', 't_end', 'requests', 'cost_usd', 'usd_per_pct', 'status', 'exclude_reason'];
+  const head = ['account_tag', 'gauge', 'resets_at', 'g_base', 'g_end', 'delta', 't_base', 't_end', 'cost_usd', 'cost_lo', 'cost_hi', 'usd_per_pct', 'usd_per_pct_lo', 'usd_per_pct_hi', 'stage', 'state', 'exclude_reason', 'price_version', 'calc_version'];
   const q = v => { const s = String(v ?? ''); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
-  const rows = data.intervals.map(i => [i.interval_id, i.public_tag, i.gauge, i.g_start, i.g_end, i.t_start, i.t_end, i.requests, i.cost_usd, i.usd_per_pct, i.status, i.exclude_reason].map(q).join(','));
-  return new Response('﻿' + [head.join(','), ...rows].join('\n') + '\n', { headers: { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': 'attachment; filename="jinsil-my-intervals.csv"', 'cache-control': 'no-store' } });
+  const iso = ms => (ms ? new Date(ms).toISOString() : '');
+  const rows = data.windows.map(w => [w.public_tag, w.gauge, w.resets_at, w.g_base, w.g_end, w.delta, iso(w.t_base), iso(w.t_end), w.cost, w.cost_lo, w.cost_hi, w.usd_per_pct, w.usd_per_pct_lo, w.usd_per_pct_hi, w.stage, w.state, w.exclude_reason, w.price_version, w.calc_version].map(q).join(','));
+  return new Response('﻿' + [head.join(','), ...rows].join('\n') + '\n', { headers: { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': 'attachment; filename="jinsil-my-windows.csv"', 'cache-control': 'no-store' } });
 }
 
 // 이의제기용 개인 리포트: 인쇄 CSS로 브라우저 'PDF로 저장'을 쓴다(Workers에서 한글 PDF 직접 생성은 하지 않음).
 export async function report(req, env, data) {
-  const acc = data.accounts.map(a => `<tr><td>#${esc(a.tag)}</td><td>${esc(PLAN_LABEL[a.plan] || '미확인')}</td><td>${a.weekly_pct}%p</td><td>${usd(a.usd_per_100pct)}</td><td>${a.value_multiple ? a.value_multiple.toFixed(1) + '배' : '—'}</td><td>${a.rank ? `${a.rank}/${a.n_in_plan}` : '—'}</td></tr>`).join('');
-  const plans = Object.values(data.plans).map(p => `<tr><td>${esc(p.label)}</td><td>${p.n}</td><td>${p.shown ? usd(p.mean_usd_per_100pct) : '측정 대기'}</td><td>${p.shown ? x(p.value_multiple) : '—'}</td></tr>`).join('');
-  const rows = data.intervals.filter(i => i.status === 'accepted').map(i => `<tr><td>${esc(i.t_start)}</td><td>${esc(i.t_end)}</td><td>${gaugeLabel(i.gauge)}</td><td>${i.g_start}→${i.g_end}%</td><td>${i.requests}</td><td>${usd(i.cost_usd, 2)}</td></tr>`).join('');
+  const acc = data.accounts.map(a => `<tr><td>#${esc(a.tag)}</td><td>${esc(PLAN_LABEL[a.plan] || '미확인')}</td><td>+${a.weekly_pct}%p · ${STAGE_KO[a.stage] || '—'}</td><td>${usd(a.usd_per_100pct)} (${usd(a.range_lo)}~${usd(a.range_hi)})</td><td>${a.value_multiple ? a.value_multiple.toFixed(1) + '배' : '—'}</td><td>${a.rank ? `${a.rank}/${a.n_in_plan}` : '—'}</td></tr>`).join('');
+  const plans = Object.values(data.plans).map(p => `<tr><td>${esc(p.label)}</td><td>${p.n}</td><td>${p.shown ? `${usd(p.median_usd_per_100pct)} (${usd(p.range_lo)}~${usd(p.range_hi)})` : '측정 대기'}</td><td>${p.shown ? x(p.value_multiple) : '—'}</td></tr>`).join('');
+  const rows = data.windows.filter(w => !w.exclude_reason && w.usd_per_pct !== null).map(w => `<tr><td>${esc(w.resets_at)}</td><td>${gaugeLabel(w.gauge)}</td><td>${w.g_base}→${w.g_end}%</td><td>${usd(w.cost, 2)}</td><td>${usd(w.usd_per_pct, 2)} (${usd(w.usd_per_pct_lo, 2)}~${usd(w.usd_per_pct_hi, 2)})</td><td>${esc(w.price_version || '')}</td></tr>`).join('');
   return html(layout('이의제기용 리포트 — 클진요', `<main class="wrap"><div class="lead"><h2>Claude 구독 한도 실측 리포트</h2><p>생성 ${esc(new Date().toISOString())} · <span class="noprint">브라우저 인쇄(⌘P / Ctrl+P) → PDF로 저장</span></p></div>
-<div class="panel"><b>측정 방법</b><p class="note">참여자 PC의 로컬 기록기(jinsil)가 응답 헤더의 한도 게이지와 요청별 토큰을 기록하고, 게이지 상승 구간의 토큰을 API 정가(잠정)로 환산했습니다. 원본 요청 기록은 참여자 PC에 있습니다. 매주 100%를 다 썼을 때의 이론적 상한 비교이며 실제 청구액이 아닙니다.</p></div>
-<div class="tab">내 계정</div><div class="panel"><table><tr><th>계정</th><th>요금제</th><th>근거 주간 게이지</th><th>주간 100% 환산</th><th>가성비</th><th>순위</th></tr>${acc}</table></div>
-<div class="tab">요금제 평균(전체 참여자)</div><div class="panel"><table><tr><th>요금제</th><th>계정 수</th><th>주간 100% 평균</th><th>가성비</th></tr>${plans}</table></div>
-<div class="tab">수용된 구간</div><div class="panel"><table><tr><th>시작(UTC)</th><th>끝(UTC)</th><th>게이지</th><th>변화</th><th>요청</th><th>환산 비용</th></tr>${rows || '<tr><td colspan="6">없음</td></tr>'}</table></div></main>`), 200, { 'cache-control': 'no-store' });
+<div class="panel"><b>측정 방법</b><p class="note">참여자 PC의 수집기(jinsil)가 Claude Code 대화 파일의 사용량 숫자와 5분 간격 게이지 관측으로 한도 창(5시간·주간)마다 쓴 토큰을 API 정가(잠정)로 환산했습니다. 게이지가 1% 단위라 범위를 함께 적었습니다. 참여자 로컬 관측값이며 매주 100%를 다 썼을 때의 이론적 상한 비교이고 실제 청구액이 아닙니다. 가격 버전은 계산에 쓴 단가표의 해시입니다.</p></div>
+<div class="tab">내 계정</div><div class="panel"><table><tr><th>계정</th><th>요금제</th><th>근거</th><th>주간 100% 환산(범위)</th><th>가성비</th><th>순위</th></tr>${acc}</table></div>
+<div class="tab">요금제 중앙값(전체 참여자)</div><div class="panel"><table><tr><th>요금제</th><th>계정 수</th><th>주간 100% 중앙값(범위)</th><th>가성비</th></tr>${plans}</table></div>
+<div class="tab">집계에 쓴 한도 창</div><div class="panel"><table><tr><th>창 리셋(UTC)</th><th>게이지</th><th>변화</th><th>환산 비용</th><th>1%당(범위)</th><th>가격 버전</th></tr>${rows || '<tr><td colspan="6">없음</td></tr>'}</table></div></main>`), 200, { 'cache-control': 'no-store' });
 }
 
 export const notFound = () => layout('없는 페이지 — 클진요', '<main class="wrap"><div class="panel"><b>페이지를 찾을 수 없습니다.</b> <a href="/">처음으로</a></div></main>');

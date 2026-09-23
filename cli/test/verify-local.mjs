@@ -86,7 +86,7 @@ try {
   // Discover the port from the child's listening socket on macOS (the v0 banner prints configured 0).
   await Promise.race([once(child.stdout, 'data'), once(child, 'exit').then(() => { throw Error(`Proxy exited: ${errors}`); }),
     new Promise((_, reject) => { const t = setTimeout(() => reject(Error('Proxy startup timeout')), 5000); t.unref(); })]);
-  const sockets = execFileSync('/usr/sbin/lsof', ['-nP', '-a', '-p', String(child.pid), '-iTCP', '-sTCP:LISTEN', '-Fn'], { encoding: 'utf8' });
+  const sockets = execFileSync('lsof', ['-nP', '-a', '-p', String(child.pid), '-iTCP', '-sTCP:LISTEN', '-Fn'], { encoding: 'utf8' });
   const port = sockets.match(/n127\.0\.0\.1:(\d+)/)?.[1];
   assert.ok(port, 'Loopback listener must exist');
   for (const name of ['lf', 'crlf', 'json', 'gzip', 'br', 'deflate', 'unsplit', 'incomplete']) {
