@@ -26,7 +26,7 @@ export function validate(p, now = Date.now()) {
   if (!Array.isArray(p.bins) || p.bins.length > MAX_BINS) return 'invalid_bins';
   if (!Array.isArray(p.samples) || p.samples.length > MAX_SAMPLES) return 'invalid_samples';
   if (!p.bins.length && !p.samples.length) return 'empty';
-  if (!onlyKeys(p.client, ['version', 'collector']) || typeof p.client.version !== 'string' || p.client.version.length > 16 || !['transcript', 'proxy'].includes(p.client.collector)) return 'invalid_client';
+  if (!onlyKeys(p.client, ['version', 'collector']) || typeof p.client.version !== 'string' || p.client.version.length > 16 || !['transcript', 'proxy', 'teamclaude'].includes(p.client.collector)) return 'invalid_client';
   const lo = now - 40 * 86400000, hi = now + 10 * 60000;
   for (const b of p.bins) {
     if (!onlyKeys(b, ['bin_start', 'model', ...TOKEN_KEYS, 'messages', 'sidechain_messages', 'special', 'revision'])) return 'unknown_bin_field';

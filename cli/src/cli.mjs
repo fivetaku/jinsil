@@ -107,6 +107,7 @@ export const CONSENT_TEXT = `── 클진요 0.2 수집 동의 ──
 읽는 것 (이 PC 안에서만)
   · Claude Code 대화 파일(~/.claude/projects)의 사용량 숫자(usage)와 모델명·시각. 본문은 읽어도 저장하지 않습니다.
   · Claude Code 로그인 토큰(macOS 키체인, 그 외 ~/.claude/.credentials.json)으로 사용량 게이지(/api/oauth/usage)를 5분마다 조회(사용 중일 때만). 토큰은 api.anthropic.com에만 보냅니다.
+  · 계정 풀 모드(--teamclaude)에서는 대신 teamclaude 사용 로그(계정·모델·토큰 수)와 풀 설정의 계정 토큰으로 계정별 게이지를 조회합니다(풀 설정은 읽기만).
 서버로 보내는 것
   · 5분 단위 모델별 토큰 합계, 게이지 값(5시간·주간)과 리셋 시각, Claude 계정 지문(해시), 요금제 등급.
   · 5분 단위 시각이 서버에 저장됩니다(활동 시간대가 드러날 수 있음). 공개 증거 묶음은 창 기준 상대시간만 씁니다.
@@ -120,8 +121,15 @@ async function setup(flags) {
   // 모드는 명시할 때만 바꾼다: --proxy / --transcript. 재설치(npx jinsil@latest setup)가 기존 프록시 모드를 조용히 끄면
   // 풀(teamclaude)의 upstream이 닫힌 포트를 가리켜 요청이 끊긴다(09-24 실사고).
   const prev = loadConfig().collector;
-  const collector = flags.proxy ? 'proxy' : flags.transcript ? 'transcript' : prev === 'proxy' ? 'proxy' : 'transcript';
-  if (prev === 'proxy' && collector === 'proxy' && !flags.proxy) console.log('기존 프록시 모드를 유지합니다(무개입 모드로 바꾸려면 먼저 풀의 upstream을 원래 주소로 되돌린 뒤 setup --transcript).');
+  const collector = flags.teamclaude ? 'teamclaude' : flags.proxy ? 'proxy' : flags.transcript ? 'transcript' : ['proxy', 'teamclaude'].includes(prev) ? prev : 'transcript';
+  if (prev === collector && prev !== 'transcript' && !flags[prev]) console.log(`기존 ${prev === 'proxy' ? '프록시' : '계정 풀(teamclaude)'} 모드를 유지합니다(바꾸려면 setup --transcript 등으로 지정).`);
+  if (collector === 'teamclaude') {
+    const { readPool, poolConfigPath, poolLogPath } = await import('./teamclaude.mjs');
+    const p = readPool();
+    if (!p) throw Error(`teamclaude 설정을 읽지 못했습니다: ${poolConfigPath()}`);
+    if (!fs.existsSync(poolLogPath())) throw Error(`teamclaude 사용 로그가 없습니다: ${poolLogPath()}`);
+    console.log(`계정 풀 모드: teamclaude OAuth 계정 ${p.size}개, 로그 ${poolLogPath()} (풀 설정은 읽기만 합니다)`);
+  }
   if (prev === 'proxy' && collector === 'transcript') console.log(`주의: 프록시 모드를 끕니다. 풀(teamclaude 등)의 upstream이 http://127.0.0.1:${port}을 가리키면 요청이 실패하니 원래 주소로 되돌리세요.`);
   saveConfig({ port, collector, installed_at: loadConfig().installed_at || new Date().toISOString(),
     ...(flags.server ? { server: String(flags.server).replace(/\/$/, '') } : {}) });
@@ -136,7 +144,7 @@ async function setup(flags) {
   } else if (flags['no-auto-submit']) saveConfig({ auto_submit: false });
   const entry = copyRuntime();
   const svc = service.install({ entry, port });
-  console.log(`런타임: ${path.dirname(path.dirname(entry))}\n서비스: ${svc.kind} (${svc.path}) · 모드: ${collector === 'proxy' ? '프록시(다계정 풀)' : '대화 파일 + 게이지(요청 경로 무개입)'}`);
+  console.log(`런타임: ${path.dirname(path.dirname(entry))}\n서비스: ${svc.kind} (${svc.path}) · 모드: ${{ proxy: '프록시(요청 경로 기록기)', teamclaude: '계정 풀 로그(teamclaude) + 계정별 게이지' }[collector] || '대화 파일 + 게이지(요청 경로 무개입)'}`);
   if (process.env.JINSIL_SERVICE_DRYRUN !== '1') {
     const ok = await waitFor(async () => { const hb = heartbeat(); return hb && Date.now() - hb.at < 30000 ? hb : null; }, 10000);
     if (!ok) throw Error('collector_start_failed');
@@ -151,7 +159,8 @@ async function setup(flags) {
   if (!flags['no-login'] && !loadDevice()?.device_token) await login(flags);
   const cfg = loadConfig();
   console.log(`\n설치 끝. 자동 제출: ${cfg.auto_submit ? '켜짐' : '꺼짐'}.`);
-  if (collector === 'proxy') console.log(`프록시 모드: 계정 풀(예: teamclaude)의 upstream을 http://127.0.0.1:${port} 로 직접 지정하세요. jinsil은 셸·풀 설정을 바꾸지 않습니다.`);
+  if (collector === 'teamclaude') console.log('계정 풀 모드: teamclaude가 남기는 요청별 로그(계정·토큰)와 계정별 게이지로 계산합니다. 풀 설정·경로는 바꾸지 않습니다. 캐시 쓰기는 5분 단가로 가정합니다.');
+  else if (collector === 'proxy') console.log(`프록시 모드: 계정 풀(예: teamclaude)의 upstream을 http://127.0.0.1:${port} 로 직접 지정하세요. jinsil은 셸·풀 설정을 바꾸지 않습니다.`);
   else console.log('별도 명령 없이 평소처럼 Claude Code(터미널·IDE·SDK)를 쓰면 됩니다.');
   console.log('측정 주의: claude.ai 웹·앱이나 다른 PC 사용은 게이지만 올려 값이 낮게 잡힐 수 있습니다(해당 창은 "외부 사용 의심"으로 제외).');
   console.log('보낼 내용 미리보기: jinsil submit --dry-run · 상태: jinsil status · 내 결과: https://jinsil.axwith.com/me');
@@ -259,7 +268,7 @@ async function claude(rest) {
 const HELP = `jinsil ${VERSION} — 클진요 (클로드에게 진실을 요구합니다)
   jinsil setup [--yes] [--proxy] [--server URL] [--no-login] [--no-path] [--no-auto-submit]
                                      수집기 설치·동의·서비스 등록·이 PC 연결 (--proxy: 다계정 풀용 로컬 기록기)
-  jinsil setup [--proxy|--transcript] 모드 지정(생략 시 기존 모드 유지)
+  jinsil setup [--teamclaude|--proxy|--transcript] 모드 지정(생략 시 기존 모드 유지)
   jinsil status | report [--evidence] 상태 / 로컬 한도 창 계산(증거 묶음 파일)
   jinsil submit [--dry-run] [--auto on|off]
   jinsil login | logout              웹 계정 연결 / 해제

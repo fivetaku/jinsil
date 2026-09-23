@@ -9,11 +9,13 @@ import { loadConfig, loadDevice } from './config.mjs';
 import { scan, lastActivity } from './transcript.mjs';
 import { createSampler } from './gauge.mjs';
 import { acquireLock, LEDGER_FILE } from './recorder.mjs';
+import { readPool, scanPoolLog, createPoolSampler, lastActivityByFp } from './teamclaude.mjs';
 
 const TICK_MS = 60000;
 export const stateFile = () => path.join(dataDir(), 'transcript_state.json');
 export const samplesFile = () => path.join(dataDir(), 'samples.jsonl');
 export const heartbeatFile = () => path.join(dataDir(), 'collector.json');
+export const poolStateFile = () => path.join(dataDir(), 'teamclaude_state.json');
 
 const readJson = (f, d) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return d; } };
 function writeJsonAtomic(f, v) {
@@ -50,6 +52,19 @@ export async function collectOnce({ sampler, since, now = Date.now(), root } = {
   return { changed, sample: s, messages: Object.keys(st.messages).length, excluded: st.excluded };
 }
 
+// 계정 풀 모드 수집 1회: 풀 로그 증분 → 활동 계정 게이지 조회
+export async function collectPoolOnce({ sampler, since, now = Date.now() } = {}) {
+  const pool = readPool();
+  if (!pool) return { error: 'teamclaude_config_not_found' };
+  const st = readJson(poolStateFile(), {});
+  const changed = scanPoolLog(st, { pool, since, now });
+  fs.mkdirSync(dataDir(), { recursive: true, mode: 0o700 });
+  writeJsonAtomic(poolStateFile(), st);
+  const samples = sampler ? await sampler.tick(pool, lastActivityByFp(st)) : [];
+  for (const s of samples) appendSample(s);
+  return { changed, samples: samples.length, messages: Object.keys(st.messages).length, excluded: st.excluded };
+}
+
 export async function startCollector({ onTick } = {}) {
   fs.mkdirSync(dataDir(), { recursive: true, mode: 0o700 });
   const lockFd = acquireLock(path.join(dataDir(), 'collector.lock'));
@@ -59,15 +74,17 @@ export async function startCollector({ onTick } = {}) {
     const { startRecorder } = await import('./recorder.mjs');
     startRecorder({ port: cfg.port });
   }
-  const sampler = cfg.collector === 'proxy' ? null : createSampler();
+  const pool = cfg.collector === 'teamclaude';
+  const sampler = cfg.collector === 'proxy' ? null : pool ? createPoolSampler() : createSampler();
   const since = Date.parse(cfg.consent_v2_at || cfg.installed_at || 0) || 0;
   const loop = async () => {
     let r = null, err = null;
     try {
-      r = cfg.collector === 'proxy' ? { proxy: true } : await collectOnce({ sampler, since });
+      r = cfg.collector === 'proxy' ? { proxy: true } : pool ? await collectPoolOnce({ sampler, since }) : await collectOnce({ sampler, since });
+      if (r?.error) err = r.error;
       if (onTick) await onTick(r);
     } catch (e) { err = e.code || e.message; }
-    writeJsonAtomic(heartbeatFile(), { pid: process.pid, at: Date.now(), mode: cfg.collector || 'transcript', gauge_status: sampler?.state.status ?? null,
+    writeJsonAtomic(heartbeatFile(), { pid: process.pid, at: Date.now(), mode: cfg.collector || 'transcript', gauge_status: pool ? [...(sampler.state.values?.() || [])].map(x => x.status).join(',') || null : sampler?.state.status ?? null,
       messages: r?.messages ?? null, excluded: r?.excluded ?? null, error: err, ledger: cfg.collector === 'proxy' ? LEDGER_FILE : null });
   };
   await loop();

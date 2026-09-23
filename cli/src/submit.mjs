@@ -8,11 +8,11 @@ import path from 'node:path';
 import { dataDir } from './paths.mjs';
 import { loadConfig, loadDevice } from './config.mjs';
 import { buildBins } from './bins.mjs';
-import { readSamples, sampleRows, stateFile } from './collector.mjs';
+import { readSamples, sampleRows, stateFile, poolStateFile } from './collector.mjs';
 import { COLUMNS, LEDGER_FILE } from './recorder.mjs';
 import { PRICES, TOKEN_KEYS } from './prices.mjs';
 
-export const CLIENT_VERSION = '0.2.1';
+export const CLIENT_VERSION = '0.2.2';
 export const CONSENT_VERSION = 2;
 const MAX_BINS = 200, MAX_SAMPLES = 400;
 const sentFile = () => path.join(dataDir(), 'v2_submitted.json');
@@ -44,6 +44,7 @@ export function proxyInputs(dir = dataDir()) {
 
 export function inputs(cfg = loadConfig()) {
   if (cfg.collector === 'proxy') return proxyInputs();
+  if (cfg.collector === 'teamclaude') return { messages: readJson(poolStateFile(), {}).messages || {}, samples: readSamples() };
   return { messages: readJson(stateFile(), {}).messages || {}, samples: readSamples() };
 }
 
@@ -73,7 +74,7 @@ export function pendingPayloads({ cfg = loadConfig() } = {}) {
       if (!bs.length && !ss.length) continue;
       out.push({ account_fp: fp, tier, bins: bs.map(binOut),
         samples: ss.map(s => ({ observed_at: s.observed_at, gauge: s.gauge, utilization: s.utilization, resets_at: s.resets_at, source: s.source, tier: s.tier })),
-        client: { version: CLIENT_VERSION, collector: cfg.collector === 'proxy' ? 'proxy' : 'transcript' }, _bins: bs });
+        client: { version: CLIENT_VERSION, collector: ['proxy', 'teamclaude'].includes(cfg.collector) ? cfg.collector : 'transcript' }, _bins: bs });
     }
   }
   return { payloads: out, unverified };
