@@ -17,11 +17,13 @@ export const poolConfigPath = () => process.env.JINSIL_TEAMCLAUDE_CONFIG || path
 export const poolLogPath = () => process.env.JINSIL_TEAMCLAUDE_LOG || path.join(os.homedir(), 'Library', 'Logs', 'teamclaude-usage.tsv');
 
 // 풀의 OAuth 계정 목록: 이름 → {fp, token}. 비활성 계정도 지문은 만든다(과거 로그 귀속용), 토큰은 활성만.
-export function readPool(file = poolConfigPath()) {
+// only: 수집할 계정 이름 목록(로컬 설정 pool_accounts). 비우면 풀의 OAuth 계정 전부.
+export function readPool(file = poolConfigPath(), only = null) {
   let cfg; try { cfg = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
   const out = new Map();
   for (const a of cfg.accounts || []) {
     if (a.type !== 'oauth' || typeof a.accountUuid !== 'string' || typeof a.name !== 'string') continue;
+    if (only?.length && !only.includes(a.name)) continue;
     out.set(a.name, { fp: accountFingerprint(a.accountUuid), token: !a.disabled && typeof a.accessToken === 'string' ? a.accessToken : null });
   }
   return out;

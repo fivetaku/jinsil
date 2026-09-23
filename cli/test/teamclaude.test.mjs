@@ -24,6 +24,7 @@ test('풀 설정: OAuth 계정만, 지문은 다른 모드와 같은 값, 비활
   assert.equal(p.get('a@x').fp, accountFingerprint('uuid-a'));
   assert.equal(p.get('a@x').token, tok); assert.equal(p.get('b@x').token, null);
   assert.equal(readPool(path.join(d, 'none.json')), null);
+  assert.deepEqual([...readPool(cfgFile, ['a@x']).keys()], ['a@x'], '지정한 계정만');
 });
 
 test('로그 증분: 연결 이전·비OAuth·비표준 모델 제외, 캐시쓰기=합계−읽기(5분 가정), 쓰는 중인 마지막 줄은 다음에', () => {

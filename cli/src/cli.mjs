@@ -125,8 +125,10 @@ async function setup(flags) {
   if (prev === collector && prev !== 'transcript' && !flags[prev]) console.log(`기존 ${prev === 'proxy' ? '프록시' : '계정 풀(teamclaude)'} 모드를 유지합니다(바꾸려면 setup --transcript 등으로 지정).`);
   if (collector === 'teamclaude') {
     const { readPool, poolConfigPath, poolLogPath } = await import('./teamclaude.mjs');
-    const p = readPool();
+    if (typeof flags.accounts === 'string') saveConfig({ pool_accounts: flags.accounts.split(',').map(x => x.trim()).filter(Boolean) });
+    const p = readPool(undefined, loadConfig().pool_accounts);
     if (!p) throw Error(`teamclaude 설정을 읽지 못했습니다: ${poolConfigPath()}`);
+    if (!p.size) throw Error('수집할 OAuth 계정이 없습니다(--accounts 이름 확인)');
     if (!fs.existsSync(poolLogPath())) throw Error(`teamclaude 사용 로그가 없습니다: ${poolLogPath()}`);
     console.log(`계정 풀 모드: teamclaude OAuth 계정 ${p.size}개, 로그 ${poolLogPath()} (풀 설정은 읽기만 합니다)`);
   }
@@ -268,7 +270,7 @@ async function claude(rest) {
 const HELP = `jinsil ${VERSION} — 클진요 (클로드에게 진실을 요구합니다)
   jinsil setup [--yes] [--proxy] [--server URL] [--no-login] [--no-path] [--no-auto-submit]
                                      수집기 설치·동의·서비스 등록·이 PC 연결 (--proxy: 다계정 풀용 로컬 기록기)
-  jinsil setup [--teamclaude|--proxy|--transcript] 모드 지정(생략 시 기존 모드 유지)
+  jinsil setup [--teamclaude [--accounts a@x,b@y]|--proxy|--transcript] 모드 지정(생략 시 기존 모드 유지)
   jinsil status | report [--evidence] 상태 / 로컬 한도 창 계산(증거 묶음 파일)
   jinsil submit [--dry-run] [--auto on|off]
   jinsil login | logout              웹 계정 연결 / 해제

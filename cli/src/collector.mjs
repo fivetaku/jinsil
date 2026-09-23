@@ -54,7 +54,7 @@ export async function collectOnce({ sampler, since, now = Date.now(), root } = {
 
 // 계정 풀 모드 수집 1회: 풀 로그 증분 → 활동 계정 게이지 조회
 export async function collectPoolOnce({ sampler, since, now = Date.now() } = {}) {
-  const pool = readPool();
+  const pool = readPool(undefined, loadConfig().pool_accounts);
   if (!pool) return { error: 'teamclaude_config_not_found' };
   const st = readJson(poolStateFile(), {});
   const changed = scanPoolLog(st, { pool, since, now });
