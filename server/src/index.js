@@ -7,6 +7,7 @@ import * as intervals from './intervals.js';
 import * as bins from './bins.js';
 import * as stats from './stats.js';
 import * as pages from './pages.js';
+import * as evidence from './evidence.js';
 
 async function route(req, env) {
   const url = new URL(req.url);
@@ -16,6 +17,7 @@ async function route(req, env) {
   if (p === '/device/token' && m === 'POST') return device.token(req, env);
   if (p === '/device/revoke' && m === 'POST') return device.revoke(req, env);
   if (p === '/v2/bins' && m === 'POST') return bins.submit(req, env);
+  if (p.startsWith('/v2/evidence/') && m === 'GET') return evidence.handle(env, p.slice('/v2/evidence/'.length));
   // 0.1.x 구간 제출은 0.2에서 중단: 측정 방식이 바뀌어 업데이트가 필요하다.
   if (p === '/v1/intervals' && m === 'POST') return json({ status: 'rejected', reason: 'upgrade_required', message: 'npx jinsil@latest setup' }, 426);
   // 공개 API

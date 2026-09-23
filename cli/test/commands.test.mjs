@@ -129,6 +129,12 @@ test('submit v2: 동의 없으면 안 보냄, 미리보기엔 금지 필드 없�
     assert.equal(got[1].body.bins.length, 1, '바뀐 bin만'); assert.equal(got[1].body.samples.length, 0);
     const rep = await runAsync(['report'], env);
     assert.match(rep, /5h|7d/);
+    const e1 = await runAsync(['report', '--evidence'], env), e2 = await runAsync(['report', '--evidence'], env);
+    const h = e1.match(/sha256: ([0-9a-f]{64})/)[1];
+    assert.equal(h, e2.match(/sha256: ([0-9a-f]{64})/)[1], '같은 입력 → 같은 해시');
+    const ev = fs.readFileSync(e1.match(/증거 묶음: (.+)/)[1].trim(), 'utf8');
+    assert.equal(JSON.parse(ev).format, 'jinsil-evidence/1');
+    assert.ok(!ev.includes(fp) && !/\d{4}-\d\d-\d\dT\d\d:/.test(ev), '지문 전체·절대 시각 없음');
   } finally { server.close(); }
 });
 

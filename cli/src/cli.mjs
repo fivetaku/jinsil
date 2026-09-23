@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline/promises';
 import { spawn, execFileSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { home, dataDir, appDir } from './paths.mjs';
 import { loadConfig, saveConfig, loadDevice, saveDevice, removeDevice, ensureHome, DEFAULT_PORT } from './config.mjs';
@@ -14,8 +14,8 @@ import * as shell from './shell.mjs';
 import { submit, pendingPayloads, inputs, CLIENT_VERSION, CONSENT_VERSION } from './submit.mjs';
 import { buildBins } from './bins.mjs';
 import { sampleRows, heartbeat } from './collector.mjs';
-import { computeWindows } from './window.mjs';
-import { costOf, PRICES } from './prices.mjs';
+import { computeWindows, CALC_VERSION, BIN_MS } from './window.mjs';
+import { costOf, PRICES, PRICE_VERSION } from './prices.mjs';
 import { planOf } from './tiers.mjs';
 
 const pkgRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -168,7 +168,7 @@ function status() {
 }
 
 // 로컬 계산(서버와 같은 창 계산기). 단가는 잠정 로컬표.
-export function localWindows(cfg = loadConfig()) {
+export function localWindows(cfg = loadConfig(), { raw = false } = {}) {
   const { messages, samples } = inputs(cfg);
   const bins = buildBins(messages, samples);
   const byAcct = new Map();
@@ -176,11 +176,45 @@ export function localWindows(cfg = loadConfig()) {
   for (const b of bins) if (b.account_fp && byAcct.has(b.account_fp)) byAcct.get(b.account_fp).bins.push({ bin_start: b.bin_start,
     cost: costOf(b.model, b), unpriced: !Object.hasOwn(PRICES, b.model) || Object.keys(b.special).length > 0 });
   const out = [];
-  for (const [fp, a] of byAcct) for (const w of computeWindows({ samples: a.samples, bins: a.bins })) out.push({ account_fp: fp, ...w });
+  for (const [fp, a] of byAcct) for (const w of computeWindows({ samples: a.samples, bins: a.bins })) out.push({ account_fp: fp, ...w, ...(raw ? { _a: a } : {}) });
   return out;
 }
 
-function report() {
+// 증거 묶음(로컬, 01_PRD 3-6): 서버 /v2/evidence와 같은 형식. 시각은 창 기준점 대비 분, 지문은 끝 4자리 태그만.
+export function evidenceBundle(cfg = loadConfig()) {
+  const r6 = v => (v === null || v === undefined ? null : Math.round(v * 1e6) / 1e6);
+  const rel = (t, base) => Math.round((t - base) / 60000);
+  const accts = new Map();
+  for (const w of localWindows(cfg, { raw: true })) {
+    const tag = w.account_fp.slice(-4);
+    const samples = w._a.samples.filter(s => s.gauge === w.gauge && s.observed_at >= w.t_base && s.observed_at <= w.t_end).sort((x, y) => x.observed_at - y.observed_at);
+    const perBin = new Map();
+    for (const b of w._a.bins.filter(b => b.bin_start >= w.t_base - BIN_MS && b.bin_start <= w.t_end)) {
+      const k = rel(b.bin_start, w.t_base), cur = perBin.get(k) ?? 0;
+      perBin.set(k, cur === null || b.cost === null ? null : cur + b.cost);
+    }
+    (accts.get(tag) || accts.set(tag, { tag, windows: [] }).get(tag)).windows.push({ gauge: w.gauge, state: w.state, stage: w.stage, exclude_reason: w.exclude_reason,
+      g_base: w.g_base, g_end: w.g_end, delta: w.delta, duration_min: rel(w.t_end, w.t_base), cost: r6(w.cost), cost_lo: r6(w.cost_lo), cost_hi: r6(w.cost_hi),
+      usd_per_pct: r6(w.usd_per_pct), price_version: PRICE_VERSION, calc_version: w.calc_version,
+      samples: samples.map(s => [rel(s.observed_at, w.t_base), s.utilization]), bins: [...perBin].sort((a, b) => a[0] - b[0]).map(([k, c]) => [k, r6(c)]) });
+  }
+  const body = { format: 'jinsil-evidence/1', scope: 'local', calc_version: CALC_VERSION,
+    formula: 'account = ΣC/ΣΔ×100, range = ΣC⁻/Σ(Δ+1)×100 ~ ΣC⁺/Σ(Δ−1)×100, plan = median(account)',
+    note: '이 PC가 로컬에서 관측한 값 · 시각은 창 기준점 대비 분 · 단가는 잠정 로컬표',
+    price_tables: { [PRICE_VERSION]: Object.keys(PRICES).sort().map(m => [m, Object.keys(PRICES[m]).sort().map(c => [c, PRICES[m][c]])]) },
+    accounts: [...accts.values()].sort((a, b) => (a.tag < b.tag ? -1 : 1)) };
+  const text = JSON.stringify(body);
+  return { text, sha256: createHash('sha256').update(text).digest('hex') };
+}
+
+function report(flags = {}) {
+  if (flags.evidence) {
+    const { text, sha256 } = evidenceBundle();
+    const f = path.join(dataDir(), `evidence-${sha256.slice(0, 12)}.json`);
+    fs.writeFileSync(f, text + '\n', { mode: 0o600 });
+    console.log(`증거 묶음: ${f}\nsha256: ${sha256}`);
+    return 0;
+  }
   const ws = localWindows();
   if (!ws.length) { console.log('아직 한도 창이 없습니다. Claude Code를 쓰면 게이지 샘플과 사용량이 쌓입니다.'); return 0; }
   const STAGE = { precise: '정밀', normal: '보통', provisional: '잠정' };
@@ -220,7 +254,7 @@ async function claude(rest) {
 const HELP = `jinsil ${VERSION} — 클진요 (클로드에게 진실을 요구합니다)
   jinsil setup [--yes] [--proxy] [--server URL] [--no-login] [--no-path] [--no-auto-submit]
                                      수집기 설치·동의·서비스 등록·이 PC 연결 (--proxy: 다계정 풀용 로컬 기록기)
-  jinsil status | report             상태 / 로컬 한도 창 계산
+  jinsil status | report [--evidence] 상태 / 로컬 한도 창 계산(증거 묶음 파일)
   jinsil submit [--dry-run] [--auto on|off]
   jinsil login | logout              웹 계정 연결 / 해제
   jinsil uninstall [--purge]         서비스 해제(--purge: 로컬 데이터 삭제)
@@ -248,7 +282,7 @@ export async function run(argv) {
     case 'setup': return setup(flags);
     case 'claude': return claude(rest);
     case 'status': return status();
-    case 'report': return report();
+    case 'report': return report(flags);
     case 'submit': {
       if (flags.auto) {
         const on = flags.auto === 'on' || flags.auto === true;

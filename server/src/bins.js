@@ -54,7 +54,7 @@ export async function rateLimited(env, key, limit, now = Date.now()) {
   return row.n > limit;
 }
 
-const binCost = (b, table) => {
+export const binCost = (b, table) => {
   const p = table[b.model];
   if (!p || COMPONENTS.some(c => p[c] === undefined) || b.cache_write_unknown > 0) return null;
   return COMPONENTS.reduce((s, c) => s + b[c] * p[c], 0) / 1e6;
@@ -111,7 +111,7 @@ export async function recomputeAccount(env, account_fp, now = Date.now()) {
   return ws.length;
 }
 
-async function sha256hex(s) {
+export async function sha256hex(s) {
   const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
   return [...new Uint8Array(d)].map(b => b.toString(16).padStart(2, '0')).join('');
 }

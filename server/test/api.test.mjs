@@ -84,6 +84,25 @@ test('가성비: 계정 값 중앙값·범위·단계·순위·스티커(기준 
   assert.ok(!text.includes(fp('5')) && !/user_id|account_fp/.test(text), '공개 응답에 지문 전체·사용자 ID 없음');
 });
 
+test('증거 묶음: 공개 요금제만, 재요청 시 같은 해시, 절대 시각·지문·사용자 ID 없음', async () => {
+  assert.equal((await fetch(`${srv.base}/v2/evidence/pro`)).status, 404);
+  assert.equal((await fetch(`${srv.base}/v2/evidence/nope`)).status, 404);
+  const a = await fetch(`${srv.base}/v2/evidence/max5x`), b = await fetch(`${srv.base}/v2/evidence/max5x`);
+  assert.equal(a.status, 200);
+  const ta = await a.text(), tb = await b.text();
+  assert.equal(ta, tb); assert.equal(a.headers.get('x-evidence-sha256'), b.headers.get('x-evidence-sha256'));
+  const e = JSON.parse(ta);
+  assert.equal(e.format, 'jinsil-evidence/1');
+  assert.equal(e.accounts.length, e.summary.n);
+  const w = e.accounts[0].windows[0];
+  assert.ok(w.samples.length >= 2 && w.bins.length >= 1 && w.price_version && e.price_tables[w.price_version]);
+  // 묶음만으로 재계산: 창 비용 = bin 비용 합(mid)
+  const c = e.accounts[0].windows.find(x => !x.exclude_reason);
+  assert.ok(c.cost > 0 && c.usd_per_pct > 0);
+  assert.ok(!/user_id|account_fp|device_id|resets_at|"t_base"|2026-/.test(ta), '절대 시각·식별자 없음');
+  assert.ok(!ta.includes(fp('5')));
+});
+
 test('단계: 누적 +5%p 잠정 등록, +8 보통, +11 정밀 / 외부 사용 의심 창은 제외 사유로 집계', async () => {
   const erin = await login(srv.base, 'erin');
   const tok = (await linkDevice(srv.base, erin)).token.device_token;

@@ -84,7 +84,8 @@ function planCard(p, sticks, bestPlan) {
   const s = (sticks[p.plan] || []).map(t => `<span class="st ${t.kind}">${esc(t.text)}</span>`).join('');
   const body = p.shown
     ? `<div class="big">${x(p.value_multiple)}</div><div class="sub">30일 환산 ≈ ${usd(p.monthly_value)}</div>
-       <div class="meta">주간 100% 중앙값 ${usd(p.median_usd_per_100pct)} (측정 범위 ${usd(p.range_lo)}~${usd(p.range_hi)}) · ${p.n}계정 · ${stageTxt(p.stages)}</div>`
+       <div class="meta">주간 100% 중앙값 ${usd(p.median_usd_per_100pct)} (측정 범위 ${usd(p.range_lo)}~${usd(p.range_hi)}) · ${p.n}계정 · ${stageTxt(p.stages)}</div>
+       <div class="meta"><a href="/v2/evidence/${esc(p.plan)}">증거 묶음(JSON) 내려받기</a></div>`
     : `<div class="big muted">구독료의 ?배</div><div class="meta">참여 ${p.participants}계정${p.participants > p.n ? ` (검증 중·데이터 부족 ${p.participants - p.n})` : ''} · 공개까지 ${Math.max(0, p.min_accounts - p.n)}계정 더</div>`;
   return `<div class="card ${bestPlan === p.plan ? 'best' : ''}"><div class="hd">${esc(p.label)}<span>월 ${usd(p.price)}</span></div>
     <div class="bd">${body}<div class="stickers">${s}</div></div></div>`;
