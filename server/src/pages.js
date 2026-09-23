@@ -81,7 +81,7 @@ export async function home(req, env) {
     const rows = s.ranking[p.plan];
     return `<div><h3>${esc(p.label)}</h3>${rows.length ? `<table><tr><th>순위</th><th>참여자</th><th>가성비</th><th class="hide-m">주간 100%</th></tr>${rows.slice(0, 10).map(r =>
       `<tr><td>${r.rank}</td><td>#${esc(r.tag)}</td><td class="num">${(r.value_multiple).toFixed(1)}배</td><td class="num hide-m">${usd(r.usd_per_100pct)}</td></tr>`).join('')}</table>`
-      : '<p class="note">아직 순위에 오른 계정이 없습니다(주간 게이지 3%p 이상 필요).</p>'}</div>`;
+      : `<p class="note">${p.shown ? '아직 순위에 오른 계정이 없습니다(주간 게이지 3%p 이상 필요).' : `측정 대기 — 이 요금제 참여 계정이 ${p.min_accounts}개 이상이면 순위를 공개합니다(현재 ${p.n}).`}</p>`}</div>`;
   }).join('');
   const feedRows = f.length ? f.map(r => `<tr><td>${kst(r.at)}</td><td><span class="dot ${r.status === 'accepted' ? (r.display === '검증 중' ? 'g' : '') : r.status === 'flagged' ? 'r' : 'g'}"></span>#${esc(r.tag)}</td>
     <td>${esc(PLAN_LABEL[r.plan] || '미확인')}</td><td>${gaugeLabel(r.gauge)} ${esc(r.range)}</td><td class="num">${esc(r.display)}</td></tr>`).join('')
@@ -128,11 +128,11 @@ export async function linkDone(req, env, ok, approved) {
 }
 
 function sparkline(points) {
-  if (points.length < 2) return '<p class="note">추이를 그리려면 수용된 구간이 2개 이상 필요합니다.</p>';
+  if (points.length < 2) return '<p class="note">추이를 그리려면 수용된 주간 구간이 2개 이상 필요합니다.</p>';
   const w = 560, h = 90, vs = points.map(p => p.v), min = Math.min(...vs), max = Math.max(...vs), span = max - min || 1;
   const d = points.map((p, i) => `${(i / (points.length - 1) * (w - 10) + 5).toFixed(1)},${(h - 8 - (p.v - min) / span * (h - 16)).toFixed(1)}`).join(' ');
-  return `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" role="img" aria-label="1%당 비용 추이"><polyline fill="none" stroke="#111" stroke-width="3" points="${d}"/></svg>
-  <p class="note">최저 ${usd(min, 2)} · 최고 ${usd(max, 2)} / 1% (${points.length}구간)</p>`;
+  return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" width="100%" height="${h}" role="img" aria-label="주간 1%당 비용 추이"><polyline fill="none" stroke="#111" stroke-width="3" points="${d}"/></svg>
+  <p class="note">주간 구간 기준 · 최저 ${usd(min, 2)} · 최고 ${usd(max, 2)} / 1% (${points.length}구간)</p>`;
 }
 
 export async function me(req, env, user, data) {
@@ -146,7 +146,8 @@ export async function me(req, env, user, data) {
     <div class="kpi"><b>${a.usd_per_100pct ? usd(a.usd_per_100pct) : '—'}</b><span>내 주간 100% 환산${a.vs_plan_mean !== null ? ` · 요금제 평균 대비 ${a.vs_plan_mean >= 0 ? '+' : ''}${(a.vs_plan_mean * 100).toFixed(0)}%` : ''}</span></div></div>
     <p class="note">최근 제출 기준 게이지: ${esc(latest || '—')} · 근거 주간 게이지 ${a.weekly_pct}%p</p></div>`;
   }).join('') : '<div class="panel"><b>아직 제출된 구간이 없습니다.</b> 터미널에서 <code>npx jinsil setup</code> 후 <code>jinsil claude</code>로 작업하면 게이지가 오른 구간이 자동으로 제출됩니다.</div>';
-  const accepted = data.intervals.filter(i => i.status === 'accepted' && i.usd_per_pct !== null).slice().reverse();
+  // 5시간 1%와 주간 1%는 단위가 달라 섞지 않는다 — 추이는 주간 구간만.
+  const accepted = data.intervals.filter(i => i.status === 'accepted' && i.usd_per_pct !== null && i.gauge === '7d').slice().reverse();
   const series = accepted.map(i => ({ v: i.usd_per_pct }));
   const reasonKo = r => ({ too_few_ticks: '게이지 상승 부족', routed_upstream: '라우터 경유', cache_ttl_unknown: '캐시 보관시간 미확인', unpriced_model: '단가 미확인 모델', incomplete_usage: '기록 불완전', tier_unknown: '요금제 미확인', daily_interval_cap: '일일 한도 초과', pending_or_interrupted_requests: '중단된 요청' }[r] || r || '');
   const rows = data.intervals.slice(0, 50).map(i => `<tr><td>${kst(i.t_end)}</td><td>#${esc(i.public_tag)}</td><td>${gaugeLabel(i.gauge)} ${i.g_start}%→${i.g_end}%</td>
@@ -155,7 +156,7 @@ export async function me(req, env, user, data) {
     <td>${d.revoked_at ? '해제됨' : `<form method="post" action="/me/devices/revoke"><input type="hidden" name="csrf" value="${esc(user.csrf)}"><input type="hidden" name="device_id" value="${esc(d.id)}"><button class="btn ghost">연결 해제</button></form>`}</td></tr>`).join('');
   return html(layout('내 대시보드 — 클진요', `<main class="wrap"><div class="lead"><h2>내 대시보드</h2><p>얼마나 비싸게 쓰고 있는지 · 같은 요금제에서 몇 위인지</p></div>
 ${accounts}
-<div class="tab">1%당 비용 추이</div><div class="panel">${sparkline(series)}</div>
+<div class="tab">주간 1%당 비용 추이</div><div class="panel">${sparkline(series)}</div>
 <div class="tab">제출 이력</div><div class="panel"><table><tr><th>구간 끝(KST)</th><th>계정</th><th>게이지</th><th>요청</th><th>1%당</th><th>상태</th></tr>${rows || '<tr><td colspan="6" class="note">없음</td></tr>'}</table>
 <p class="noprint" style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap"><a class="btn" href="/me/export.csv">CSV 내려받기</a><a class="btn ghost" href="/me/report">이의제기용 리포트(PDF로 저장)</a></p></div>
 <div class="tab">연결된 PC</div><div class="panel"><table><tr><th>이름</th><th>OS</th><th>마지막 제출</th><th></th></tr>${devs || '<tr><td colspan="4" class="note">없음</td></tr>'}</table></div>

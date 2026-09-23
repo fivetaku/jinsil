@@ -112,7 +112,8 @@ export async function publicStats(env) {
   const list = await accountStats(env);
   const plans = planStats(list, env, prices);
   const ranking = {};
-  for (const plan of PLANS) ranking[plan] = list.filter(a => a.plan === plan && a.eligible).sort((a, b) => a.rank - b.rank)
+  // 공개 기준(계정 수) 미달 요금제는 순위도 숨긴다 — 카드가 '측정 대기'인데 개인 값이 순위표로 새지 않게.
+  for (const plan of PLANS) ranking[plan] = !plans[plan].shown ? [] : list.filter(a => a.plan === plan && a.eligible).sort((a, b) => a.rank - b.rank)
     .map(a => ({ rank: a.rank, tag: a.tag, value_multiple: a.value_multiple, usd_per_100pct: a.usd_per_100pct, weekly_pct: a.weekly_pct }));
   const { baseline, stickers: st } = stickers(plans);
   const priceVer = await env.DB.prepare('SELECT COUNT(*) AS n FROM prices WHERE verified_at IS NULL').first();

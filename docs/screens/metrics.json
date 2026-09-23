@@ -1,0 +1,101 @@
+{
+  "captured_at": "2026-09-23T10:32:39.782Z",
+  "metrics": {
+    "home-1440": {
+      "overflowX": false,
+      "stickerNumberOverlaps": 0,
+      "stickerStickerOverlaps": 0,
+      "clipped": 0,
+      "outsideViewport": 0,
+      "stickers": [
+        "측정 대기 · 참여 1/2",
+        "가성비 1위",
+        "구독료의 25배",
+        "비교 기준",
+        "구독료의 15배",
+        "가격 2배 → 가치 1.2배",
+        "광고보다 적음"
+      ],
+      "height": 1867,
+      "file": "docs/screens/home-1440.png"
+    },
+    "home-390": {
+      "overflowX": false,
+      "stickerNumberOverlaps": 0,
+      "stickerStickerOverlaps": 0,
+      "clipped": 0,
+      "outsideViewport": 0,
+      "stickers": [
+        "측정 대기 · 참여 1/2",
+        "가성비 1위",
+        "구독료의 25배",
+        "비교 기준",
+        "구독료의 15배",
+        "가격 2배 → 가치 1.2배",
+        "광고보다 적음"
+      ],
+      "height": 2789,
+      "file": "docs/screens/home-390.png"
+    },
+    "methodology-1440": {
+      "overflowX": false,
+      "stickerNumberOverlaps": 0,
+      "stickerStickerOverlaps": 0,
+      "clipped": 0,
+      "outsideViewport": 0,
+      "stickers": [],
+      "height": 1458,
+      "file": "docs/screens/methodology-1440.png"
+    },
+    "methodology-390": {
+      "overflowX": false,
+      "stickerNumberOverlaps": 0,
+      "stickerStickerOverlaps": 0,
+      "clipped": 0,
+      "outsideViewport": 0,
+      "stickers": [],
+      "height": 1856,
+      "file": "docs/screens/methodology-390.png"
+    },
+    "me-1440": {
+      "overflowX": false,
+      "stickerNumberOverlaps": 0,
+      "stickerStickerOverlaps": 0,
+      "clipped": 0,
+      "outsideViewport": 0,
+      "stickers": [],
+      "height": 2718,
+      "file": "docs/screens/me-1440.png"
+    },
+    "me-390": {
+      "overflowX": false,
+      "stickerNumberOverlaps": 0,
+      "stickerStickerOverlaps": 0,
+      "clipped": 0,
+      "outsideViewport": 0,
+      "stickers": [],
+      "height": 5010,
+      "file": "docs/screens/me-390.png"
+    },
+    "report-1440": {
+      "overflowX": false,
+      "stickerNumberOverlaps": 0,
+      "stickerStickerOverlaps": 0,
+      "clipped": 0,
+      "outsideViewport": 0,
+      "stickers": [],
+      "height": 1504,
+      "file": "docs/screens/report-1440.png"
+    },
+    "report-390": {
+      "overflowX": false,
+      "stickerNumberOverlaps": 0,
+      "stickerStickerOverlaps": 0,
+      "clipped": 0,
+      "outsideViewport": 0,
+      "stickers": [],
+      "height": 1900,
+      "file": "docs/screens/report-390.png"
+    }
+  }
+}
