@@ -21,6 +21,7 @@ a{color:inherit}.wrap{max-width:1200px;margin:0 auto;padding:0 24px}
 .band .join code{background:#111;color:#FFD400;font-size:.95em;padding:4px 10px;border-radius:6px;font-weight:700}
 .band .live{word-break:keep-all;margin:-12px 0 0;padding:0 0 20px;text-align:center;font-size:14px;font-weight:600}.band .live b{font-weight:900}
 .band .join a{font-weight:600;font-size:.8em;margin-left:8px;opacity:.75}
+.caution{border:2px solid #111;border-left:8px solid #D62828;background:#fff;padding:10px 14px;margin:22px 0 0;font-size:14px;word-break:keep-all}.caution ul{margin:6px 0 0;padding-left:18px}.caution li{margin:2px 0}
 .lead{display:flex;align-items:baseline;gap:18px;flex-wrap:wrap;margin:34px 0 18px}.lead h2{margin:0;font-size:clamp(26px,3.6vw,40px);font-weight:900;letter-spacing:-1.5px}
 .lead h2 mark{background:linear-gradient(transparent 55%,#FFD400 55%);color:inherit}.lead p{margin:0;color:#555;font-size:14px}
 .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
@@ -106,6 +107,10 @@ export async function home(req, env) {
   return html(layout('클진요 — 클로드에게 진실을 요구합니다', `
 <section class="band"><div class="wrap"><h1>클로드에게 진실을 요구합니다</h1><p class="join">터미널에서 <code>npx jinsil setup</code> 으로 클진요를 설치한 뒤 Claude Code를 사용해 주세요 <a href="/methodology">어떻게 계산하나요?</a></p><p class="live">지금 <b>${s.measuring.users}명</b>이 PC ${s.measuring.devices}대에서 측정 중 · 게이지가 오른 구간부터 자동 제출</p></div></section>
 <main class="wrap" id="stats">
+  <div class="caution"><b>측정 주의</b><ul>
+    <li>측정 중인 계정으로 claude.ai 채팅·모바일·다른 PC를 함께 쓰면 게이지만 오르고 기록은 안 돼 가치가 낮게 나옵니다.</li>
+    <li>여러 계정을 돌려 쓰는 프록시·라우터 경유 사용은 계정을 나눌 수 없어 집계에서 빠집니다.</li>
+    <li>금액은 API 정가로 환산한 추정치이며 실제 청구액이 아닙니다.</li></ul></div>
   <div class="lead"><h2>구독료 <mark>1달러로</mark> 얼마나 쓸 수 있나</h2><p>${esc(s.note)}${s.price_status === 'provisional' ? ' · 단가 잠정' : ''}</p></div>
   <div class="cards">${plans.map(p => planCard(p, s.stickers, best)).join('')}</div>
   <h3 class="sub">팀 요금제 <small>좌석당 월 결제가 · Standard는 Pro의 1.25배, Premium은 6.25배 사용량(공식 안내)</small></h3>
