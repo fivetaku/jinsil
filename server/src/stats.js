@@ -159,12 +159,10 @@ export const EXCLUDE_KO = { external_usage_suspected: '외부 사용 의심', ti
   duplicate_collection_suspected: '중복 수집 의심', attribution_unverified: '계정 미확정' };
 
 export async function feed(env, limit = 30) {
-  const [prices, list] = await Promise.all([planPrices(env), accountStats(env)]);
-  const plans = planStats(list, env, prices);
   const { results } = await env.DB.prepare(`SELECT w.updated_at, w.gauge, w.g_base, w.g_end, w.stage, w.state, w.exclude_reason, w.plan, a.public_tag
     FROM windows w JOIN claude_accounts a ON a.account_fp = w.account_fp ORDER BY w.updated_at DESC LIMIT ?`).bind(limit * 3).all();
-  // 공개 기준 미달 요금제의 제출 내역은 공개 피드에 싣지 않는다.
-  return results.filter(r => plans[r.plan]?.shown).slice(0, limit).map(r => ({
+  // 참여 로그는 금액 없이 게이지 변화·상태만 싣는다 → 공개 기준 미달 요금제도 보여 준다(09-24 오너 결정). 금액·배수는 여전히 공개 기준 뒤.
+  return results.slice(0, limit).map(r => ({
     at: new Date(Math.floor(r.updated_at / 60000) * 60000).toISOString(), tag: r.public_tag, plan: r.plan, gauge: r.gauge,
     range: `${r.g_base}%→${r.g_end}%`, stage: r.stage, state: r.state, exclude_reason: r.exclude_reason,
     display: r.exclude_reason ? `제외 · ${EXCLUDE_KO[r.exclude_reason] || r.exclude_reason}` : `${STAGE_KO[r.stage]} · ${r.state === 'final' ? '확정' : '진행 중'}`,

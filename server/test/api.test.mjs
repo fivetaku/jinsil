@@ -50,7 +50,7 @@ test('같은 PC(같은 설치 식별자)를 다시 연결하면 예전 연결은
   assert.equal((await stats()).measuring.devices, after.devices + 1, '다른 PC는 따로 셈');
 });
 
-test('공개 기준 미달 요금제는 API에 수치를 싣지 않는다(1계정 합성), 피드에도 없음', async () => {
+test('공개 기준 미달 요금제는 API에 수치를 싣지 않는다(1계정 합성), 참여 로그에는 금액 없이 보인다', async () => {
   const dave = await login(srv.base, 'dave');
   const tok = (await linkDevice(srv.base, dave)).token.device_token;
   assert.equal((await postBins(srv.base, tok, windowPayload({ fp: fp('d'), tier: 'default_claude_pro' }))).status, 201);
@@ -60,7 +60,9 @@ test('공개 기준 미달 요금제는 API에 수치를 싣지 않는다(1계�
   for (const k of ['median_usd_per_100pct', 'p25', 'p75', 'range_lo', 'range_hi', 'monthly_value', 'value_multiple', 'five_hour_median_usd_per_100pct', 'stages'])
     assert.equal(pro[k], null, k);
   assert.deepEqual(s.ranking.pro, []);
-  assert.ok(!(await (await fetch(`${srv.base}/api/feed`)).json()).some(r => r.plan === 'pro'));
+  const feedPro = (await (await fetch(`${srv.base}/api/feed`)).json()).filter(r => r.plan === 'pro');
+  assert.ok(feedPro.length >= 1, '참여 로그에는 보임');
+  assert.ok(feedPro.every(r => !/usd|cost|value|\$/.test(JSON.stringify(r))), '금액은 없음');
 });
 
 test('가성비: 계정 값 중앙값·범위·단계·순위·스티커(기준 Max 5x)·이상치 제외', async () => {

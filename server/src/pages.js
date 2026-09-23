@@ -122,7 +122,7 @@ export async function home(req, env) {
   const feedTable = gauge => {
     const rs = f.filter(r => r.gauge === gauge);
     return `<table><tr><th>갱신(KST)</th><th>참여자</th><th>요금제</th><th>게이지</th><th>상태</th></tr>${rs.length ? rs.map(r => `<tr><td>${kst(r.at)}</td><td><span class="dot ${r.exclude_reason ? 'r' : r.state === 'final' ? '' : 'g'}"></span>#${esc(r.tag)}</td>
-    <td>${esc(PLAN_LABEL[r.plan] || '미확인')}</td><td>${esc(r.range)}</td><td>${esc(r.display)}</td></tr>`).join('') : '<tr><td colspan="5" class="note">아직 없습니다(공개 기준을 채운 요금제만 표시).</td></tr>'}</table>`;
+    <td>${esc(PLAN_LABEL[r.plan] || '미확인')}</td><td>${esc(r.range)}</td><td>${esc(r.display)}</td></tr>`).join('') : '<tr><td colspan="5" class="note">아직 없습니다.</td></tr>'}</table>`;
   };
   const excl = allPlans.map(p => `<tr><td>${esc(p.label)}</td><td>${esc(exclTxt(p.exclusions))}</td></tr>`).join('');
   return html(layout('클진요 — 클로드에게 진실을 요구합니다', `
