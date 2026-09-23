@@ -1,6 +1,28 @@
-# jinsil
+# jinsil — 클진요 (클로드에게 진실을 요구합니다)
 
-> API, CLI, LLM 앱, 자동화 스크립트를 subtype별 평가 기준으로 설계, 구현, 테스트, 리뷰하는 개발 에이전트 워크스페이스입니다.
+Claude 구독 한도 1%가 실제로 얼마인지 참여자 PC에서 측정하고, 계산값만 모아 요금제별 가성비를 공개하는 프로젝트. 정본 PRD: `~/ideation-workspace/50-blueprints/claude-quota-ledger/PRD/`.
+
+| 경로 | 내용 |
+|---|---|
+| `cli/` | npm `jinsil` — 로컬 기록기(프록시)·헤더 틱 구간 계산·setup/claude/status/report/submit/uninstall. 런타임 의존성 0 |
+| `server/` | Cloudflare Workers + D1 — 기기 코드 연결, Google 로그인, 제출 검증·비용 재계산, 가성비·순위·스티커, 웹 페이지 |
+| `scripts/` | `e2e-run.mjs`(실제 계정 로컬 E2E), `e2e-check.mjs` |
+| `docs/` | 스크린샷(`screens/`), E2E 기록 |
+
+```sh
+npm install                       # 루트(워크스페이스). wrangler는 server 개발 의존성
+npm test --workspaces             # cli + server
+node cli/test/verify-local.mjs    # 기록기 회귀 25개
+npm run test:interval && npm run test:web && npm run screenshots
+node scripts/e2e-run.mjs && npm run e2e:check   # 실제 구독 사용량 소모
+cd server && npm run dev          # 로컬 서버 (.dev.vars.example 참고)
+```
+
+배포(`wrangler deploy`·D1 생성·Google OAuth 앱·npm publish·DNS)는 사용자 승인 사항이며 아직 하지 않았다.
+
+---
+
+> 아래는 Workspace_Builder 생성 안내: API, CLI, LLM 앱, 자동화 스크립트를 subtype별 평가 기준으로 설계, 구현, 테스트, 리뷰하는 개발 에이전트 워크스페이스입니다.
 
 이 워크스페이스는 Workspace_Builder가 `Development Agent` 아키타입(structure.json v2.0.0)으로 생성했습니다.
 
