@@ -242,4 +242,4 @@ Lite에서도 핵심 테스트는 유지합니다. SOLID는 실제 모듈 경계
 - **CLI**: 런타임 의존성 0, `postinstall` 금지, 설치만으로 설정 변경 없음.
 - **사용자 승인 사항**: npm publish, git push/원격 생성, `wrangler deploy`, `wrangler secret put`, DNS 변경, 실제 Google OAuth 앱 생성, 전역 Claude 설정·teamclaude·키체인 변경.
 - **시크릿**: 명령 인라인 금지. 로컬 개발 값은 `server/.dev.vars`(gitignore)로만.
-- 공개 화면에 토큰 종류별 차트·랭킹을 두지 않는다. 메인 지표는 요금제별 가성비 배수 + 스티커.
+- 공개 화면에 토큰 종류별 차트를 두지 않는다. 메인 지표는 요금제별 가성비 배수 + 스티커, 요금제별 익명 가성비 순위 표시(사용자 결정 2026-09-23).

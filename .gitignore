@@ -44,3 +44,4 @@ node_modules/
 .wrangler/
 server/.dev.vars
 *.tgz
+.fablize/
