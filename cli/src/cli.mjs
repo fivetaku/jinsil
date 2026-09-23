@@ -117,7 +117,12 @@ export const CONSENT_TEXT = `── 클진요 0.2 수집 동의 ──
 async function setup(flags) {
   ensureHome();
   const port = Number(flags.port || loadConfig().port || DEFAULT_PORT);
-  const collector = flags.proxy ? 'proxy' : 'transcript';
+  // 모드는 명시할 때만 바꾼다: --proxy / --transcript. 재설치(npx jinsil@latest setup)가 기존 프록시 모드를 조용히 끄면
+  // 풀(teamclaude)의 upstream이 닫힌 포트를 가리켜 요청이 끊긴다(09-24 실사고).
+  const prev = loadConfig().collector;
+  const collector = flags.proxy ? 'proxy' : flags.transcript ? 'transcript' : prev === 'proxy' ? 'proxy' : 'transcript';
+  if (prev === 'proxy' && collector === 'proxy' && !flags.proxy) console.log('기존 프록시 모드를 유지합니다(무개입 모드로 바꾸려면 먼저 풀의 upstream을 원래 주소로 되돌린 뒤 setup --transcript).');
+  if (prev === 'proxy' && collector === 'transcript') console.log(`주의: 프록시 모드를 끕니다. 풀(teamclaude 등)의 upstream이 http://127.0.0.1:${port}을 가리키면 요청이 실패하니 원래 주소로 되돌리세요.`);
   saveConfig({ port, collector, installed_at: loadConfig().installed_at || new Date().toISOString(),
     ...(flags.server ? { server: String(flags.server).replace(/\/$/, '') } : {}) });
   installId();
@@ -254,6 +259,7 @@ async function claude(rest) {
 const HELP = `jinsil ${VERSION} — 클진요 (클로드에게 진실을 요구합니다)
   jinsil setup [--yes] [--proxy] [--server URL] [--no-login] [--no-path] [--no-auto-submit]
                                      수집기 설치·동의·서비스 등록·이 PC 연결 (--proxy: 다계정 풀용 로컬 기록기)
+  jinsil setup [--proxy|--transcript] 모드 지정(생략 시 기존 모드 유지)
   jinsil status | report [--evidence] 상태 / 로컬 한도 창 계산(증거 묶음 파일)
   jinsil submit [--dry-run] [--auto on|off]
   jinsil login | logout              웹 계정 연결 / 해제

@@ -12,7 +12,7 @@ import { readSamples, sampleRows, stateFile } from './collector.mjs';
 import { COLUMNS, LEDGER_FILE } from './recorder.mjs';
 import { PRICES, TOKEN_KEYS } from './prices.mjs';
 
-export const CLIENT_VERSION = '0.2.0';
+export const CLIENT_VERSION = '0.2.1';
 export const CONSENT_VERSION = 2;
 const MAX_BINS = 200, MAX_SAMPLES = 400;
 const sentFile = () => path.join(dataDir(), 'v2_submitted.json');

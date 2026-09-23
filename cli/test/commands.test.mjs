@@ -74,6 +74,19 @@ test('setup --yes: 동의 v2 기록·자동 제출 켬, 0.1.x가 넣은 별칭 �
   assert.equal(fs.readFileSync(rc, 'utf8'), user);
 });
 
+test('재설치(setup)는 기존 프록시 모드를 유지하고, --transcript로만 끈다', () => {
+  const { d, env } = sandbox();
+  fs.mkdirSync(path.join(d, 'home'), { recursive: true });
+  fs.writeFileSync(path.join(d, 'home', 'config.json'), JSON.stringify({ collector: 'proxy', port: 10297 }));
+  const out = run(['setup', '--no-login', '--port', '10297'], env);
+  assert.match(out, /기존 프록시 모드를 유지/);
+  assert.equal(cfgOf(d).collector, 'proxy');
+  const off = run(['setup', '--no-login', '--transcript', '--port', '10297'], env);
+  assert.match(off, /프록시 모드를 끕니다/);
+  assert.equal(cfgOf(d).collector, 'transcript');
+  run(['uninstall', '--purge'], env);
+});
+
 const T = Date.now() - 2 * 3600000;
 function seed(home, { consent = true } = {}) {
   const data = path.join(home, 'data');
