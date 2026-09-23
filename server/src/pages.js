@@ -161,7 +161,7 @@ export async function methodology(req, env) {
 <h2>보조 지표: 토큰 종류별 가중치와 반영 지연</h2><p>5시간 창마다 Δ게이지 ≈ w<sub>입력</sub>·C<sub>입력</sub> + w<sub>출력</sub>·C<sub>출력</sub> + w<sub>캐시 읽기</sub>·C<sub>캐시 읽기</sub> + w<sub>캐시 쓰기</sub>·C<sub>캐시 쓰기</sub>(C는 성분별 API 정가 비용)로 놓고 절편 없는 최소제곱으로 w를 구합니다. 공개값은 전체 평균(ΣΔ÷ΣC) 대비 상대 가중치로, 1보다 크면 게이지가 그 성분을 정가 비율보다 무겁게 센다는 뜻입니다. 5시간 창 30개·계정 5개 미만이면 공개하지 않습니다. 반영 지연은 창마다 0~30분(5분 간격) 지연을 시험해 누적 비용이 게이지 곡선에 가장 잘 맞는 값을 고르고, 그 중앙값을 냅니다. 둘 다 요금제 값 계산에는 쓰지 않습니다.</p>
 <h2>계정 풀·라우터 사용</h2><p>대화 파일에는 어느 계정으로 나갔는지가 남지 않습니다. 한 번에 한 계정을 쓰는 경우(로그인 전환 포함)는 5분마다 조회하는 게이지의 계정으로 시간순 귀속하지만, 요청마다 계정을 바꾸는 계정 풀이나 라우터를 거친 사용은 계정을 가를 수 없어 집계하지 않습니다.</p>
 <h2>한계</h2><p>참여자가 제출한 값의 진위를 서버가 증명할 방법은 없습니다(참여자 로컬 관측값). 계정 풀·라우터 사용은 기본 집계에서 빠지고, claude.ai 웹·앱 사용은 보이지 않습니다. 단가는 공식 확인 전 잠정값이며, 쓴 단가표는 해시로 남겨 다시 계산할 수 있습니다.</p>
-<h2>개인정보</h2><p>프롬프트·응답 본문, 파일 경로, 요청 ID, 호스트명, 이메일, 인증값은 서버로 보내지 않습니다. 서버에는 5분 단위 모델별 토큰 합계, 게이지 값, Claude 계정의 해시 지문, 요금제 등급이 갑니다(5분 단위 시각 포함). 공개 화면에는 지문 끝 4자리만 보입니다. 로그인 토큰은 <code>api.anthropic.com</code>에만 보냅니다.</p></main>`, { user }));
+<h2>개인정보</h2><p>프롬프트·응답 본문, 파일 경로, 요청 ID, 이메일, 인증값은 서버로 보내지 않습니다. PC 이름(호스트명)은 기기 연결 때만 보내며 본인 대시보드에서 연결된 PC를 알아보는 데만 쓰고 공개 화면에는 나오지 않습니다. 서버에는 5분 단위 모델별 토큰 합계, 게이지 값, Claude 계정의 해시 지문, 요금제 등급이 갑니다(5분 단위 시각 포함). 공개 화면에는 지문 끝 4자리만 보입니다. 로그인 토큰은 <code>api.anthropic.com</code>에만 보냅니다.</p></main>`, { user }));
 }
 
 export async function link(req, env, user, pending) {
@@ -206,7 +206,7 @@ export async function me(req, env, user, data) {
     return `<table><tr><th>창 리셋(KST)</th><th>계정</th><th>게이지</th><th>1%당(범위)</th><th>상태</th></tr>${rs.length ? rs.map(w => `<tr><td>${kst(w.resets_at)}</td><td>#${esc(w.public_tag)}</td><td>${w.g_base}%→${w.g_end}%</td>
     <td class="num">${w.usd_per_pct === null ? '—' : `${usd(w.usd_per_pct, 2)} (${usd(w.usd_per_pct_lo, 2)}~${usd(w.usd_per_pct_hi, 2)})`}</td><td>${esc(winState(w))}</td></tr>`).join('') : '<tr><td colspan="5" class="note">없음</td></tr>'}</table>`;
   };
-  const devs = data.devices.map(d => `<tr><td>${esc(d.name)}</td><td>${esc(d.os)}${d.collector ? ` · ${d.collector === 'proxy' ? '프록시' : '대화 파일'}` : ''}</td><td>${d.last_seen ? kst(new Date(d.last_seen).toISOString()) : '—'}</td>
+  const devs = data.devices.map(d => `<tr><td>${esc(d.name)}</td><td>${esc(d.os)}${d.collector ? ` · ${{ proxy: '프록시', teamclaude: '계정 풀 로그', transcript: '대화 파일' }[d.collector] || d.collector}` : ''}</td><td>${d.last_seen ? kst(new Date(d.last_seen).toISOString()) : '—'}</td>
     <td>${d.revoked_at ? '해제됨' : `<form method="post" action="/me/devices/revoke"><input type="hidden" name="csrf" value="${esc(user.csrf)}"><input type="hidden" name="device_id" value="${esc(d.id)}"><button class="btn ghost">연결 해제</button></form>`}</td></tr>`).join('');
   return html(layout('내 대시보드 — 클진요', `<main class="wrap"><div class="lead"><h2>내 대시보드</h2><p>얼마나 비싸게 쓰고 있는지 · 같은 요금제에서 몇 위인지</p></div>
 ${accounts}

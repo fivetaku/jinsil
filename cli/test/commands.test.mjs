@@ -151,14 +151,13 @@ test('submit v2: 동의 없으면 안 보냄, 미리보기엔 금지 필드 없�
   } finally { server.close(); }
 });
 
-test('로그인은 호스트명 대신 설치 식별자를 보낸다', async () => {
+test('로그인은 본인 확인용 호스트명과 설치 식별자 앞 8자리를 보낸다(공개 화면 비노출)', async () => {
   let body = null;
   const server = http.createServer(async (req, res) => { let b = ''; for await (const c of req) b += c; body = JSON.parse(b); res.writeHead(500); res.end(); });
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   try {
     const { env } = sandbox();
     await runAsync(['login', '--server', `http://127.0.0.1:${server.address().port}`], env).catch(() => {});
-    assert.match(body.name, /^pc-[0-9a-f-]{36}$/);
-    assert.ok(!JSON.stringify(body).includes(os.hostname()));
+    assert.equal(body.name, `${os.hostname().slice(0, 40)} · ${cfgOf(path.dirname(env.JINSIL_HOME)).install_id.slice(0, 8)}`);
   } finally { server.close(); }
 });

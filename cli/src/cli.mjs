@@ -75,9 +75,9 @@ function installId() {
 async function login(flags) {
   const cfg = loadConfig();
   const server = String(flags.server || cfg.server).replace(/\/$/, '');
-  // 호스트명 대신 무작위 설치 식별자(같은 PC 재연결 판정용)를 보낸다.
+  // 기기 이름 = 호스트명 · 설치 식별자 앞 8자리. 본인 /me에서 연결된 PC를 알아보는 용도(공개 화면 비노출), 같은 PC 재연결 판정에도 쓴다.
   const r = await fetch(`${server}/device/code`, { method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ name: `pc-${installId()}`, os: `${process.platform}-${process.arch}`, client_version: CLIENT_VERSION }) })
+    body: JSON.stringify({ name: `${os.hostname().slice(0, 40)} · ${installId().slice(0, 8)}`, os: `${process.platform}-${process.arch}`, client_version: CLIENT_VERSION }) })
     .catch(() => { throw Error('server_unreachable'); });
   if (!r.ok) throw Error(`device_code_http_${r.status}`);
   const d = await r.json();
@@ -111,7 +111,7 @@ export const CONSENT_TEXT = `── 클진요 0.2 수집 동의 ──
   · 5분 단위 모델별 토큰 합계, 게이지 값(5시간·주간)과 리셋 시각, Claude 계정 지문(해시), 요금제 등급.
   · 5분 단위 시각이 서버에 저장됩니다(활동 시간대가 드러날 수 있음). 공개 증거 묶음은 창 기준 상대시간만 씁니다.
 보내지 않는 것
-  · 프롬프트·응답 본문, 파일 경로, 요청 ID, 호스트명, 이메일, 인증값.
+  · 프롬프트·응답 본문, 파일 경로, 요청 ID, 이메일, 인증값. (PC 이름(호스트명)은 기기 연결 때 한 번 보내며 본인 /me에서만 보입니다.)
 끄기: jinsil submit --auto off · 지우기: jinsil uninstall --purge + 웹 /me에서 데이터 삭제`;
 
 async function setup(flags) {
