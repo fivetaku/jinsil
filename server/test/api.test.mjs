@@ -127,7 +127,7 @@ test('가성비 배수·요금제 순위·스티커(기준 Max 5x)·이상치 �
   const st20 = s.stickers.max20x.map(t => t.text);
   assert.ok(st20.some(t => /^가격 2배 → 가치 /.test(t)));
   assert.ok(s.stickers.max5x.some(t => t.kind === 'baseline'));
-  assert.deepEqual(s.stickers.pro.map(t => t.text), ['측정 대기 · 참여 0/2']);
+  assert.deepEqual(s.stickers.pro.map(t => t.text), ['측정 대기 · 통계 반영 0/2']);
   assert.equal(s.stickers[m20.value_multiple > m5.value_multiple ? 'max20x' : 'max5x'].some(t => t.kind === 'best'), true);
   // 공개 응답에 계정 지문 전체·사용자 ID가 없어야 함
   const text = JSON.stringify(s) + JSON.stringify(await (await fetch(`${srv.base}/api/feed`)).json());

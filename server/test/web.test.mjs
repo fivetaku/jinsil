@@ -12,7 +12,7 @@ const get = async (p, cookie) => { const r = await fetch(`${srv.base}${p}`, { he
 test('메인: 슬로건 띠·요금제 카드·스티커 5종·가성비 막대·순위·참여 로그·이론적 상한 표기', async () => {
   const { r, t } = await get('/');
   assert.equal(r.status, 200);
-  for (const s of ['클로드에게 진실을 요구합니다', '구독료', '가성비 1위', '구독료의', '비교 기준', '가격 2배 → 가치', '광고보다 적음', '측정 대기 · 참여 1/2',
+  for (const s of ['클로드에게 진실을 요구합니다', '구독료', '가성비 1위', '구독료의', '비교 기준', '가격 2배 → 가치', '광고보다 적음', '측정 대기 · 통계 반영 1/2',
     '가성비 배수', '요금제별 순위', '참여 로그', '매주 100%를 다 썼을 때의 이론적 상한', 'npx jinsil setup', '#', 'Google로 참여'])
     assert.ok(t.includes(s), `메인에 "${s}" 없음`);
   assert.match(t, /Max 5x[\s\S]*?\d+배/);

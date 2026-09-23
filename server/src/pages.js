@@ -75,7 +75,7 @@ function planCard(p, sticks, bestPlan) {
   const body = p.shown
     ? `<div class="big">${x(p.value_multiple)}</div><div class="sub">월 최대 ≈ ${usd(p.monthly_value)}</div>
        <div class="meta">주간 100% ≈ ${usd(p.mean_usd_per_100pct)} · 참여 ${p.n}계정</div>`
-    : `<div class="big muted">구독료의 ?배</div><div class="meta">공개 기준 ${p.min_accounts}계정 · 현재 ${p.n}계정</div>`;
+    : `<div class="big muted">구독료의 ?배</div><div class="meta">참여 ${p.participants}계정${p.participants > p.n ? ` (검증 중 ${p.participants - p.n})` : ''} · 공개까지 ${Math.max(0, p.min_accounts - p.n)}계정 더</div>`;
   return `<div class="card ${bestPlan === p.plan ? 'best' : ''}"><div class="hd">${esc(p.label)}<span>월 ${usd(p.price)}</span></div>
     <div class="bd">${body}<div class="stickers">${s}</div></div></div>`;
 }

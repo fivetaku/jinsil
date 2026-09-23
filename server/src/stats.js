@@ -93,7 +93,7 @@ export function stickers(plans) {
   const out = {};
   for (const p of Object.values(plans)) {
     const s = [];
-    if (!p.shown) { s.push({ kind: 'waiting', text: `측정 대기 · 참여 ${p.n}/${p.min_accounts}` }); out[p.plan] = s; continue; }
+    if (!p.shown) { s.push({ kind: 'waiting', text: `측정 대기 · 통계 반영 ${p.n}/${p.min_accounts}` }); out[p.plan] = s; continue; }
     if (best && best.plan === p.plan) s.push({ kind: 'best', text: '가성비 1위' });
     s.push({ kind: 'multiple', text: `구독료의 ${Math.round(p.value_multiple)}배` });
     if (base && base.plan === p.plan) s.push({ kind: 'baseline', text: '비교 기준' });
