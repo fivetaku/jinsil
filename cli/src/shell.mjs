@@ -22,22 +22,46 @@ export function rcFiles() {
 }
 
 const q = s => `"${String(s).replace(/(["\\$`])/g, '\\$1')}"`;
-const block = file => file.endsWith('.fish')
-  ? `${START}\nfish_add_path ${q(binDir())}\n${END}\n`
-  : `${START}\nexport PATH=${q(binDir())}:"$PATH"\n${END}\n`;
+const sq = s => `'${String(s).replace(/'/g, `'\\''`)}'`;
+
+// 셸 설정에서 Anthropic으로 직접 가는 claude 별칭(값이 'claude'로 시작)을 찾는다.
+// 라우터·다른 모델용(ANTHROPIC_BASE_URL=…, ocx, teamclaude …)은 값이 claude로 시작하지 않으므로 건드리지 않는다.
+export function claudeAliases(text) {
+  const out = new Map();
+  for (const line of strip(text).split('\n')) {
+    const m = /^\s*alias\s+([A-Za-z0-9_.-]+)=(?:'([^']*)'|"([^"]*)")\s*(?:#.*)?$/.exec(line);
+    if (!m) continue;
+    const value = m[2] ?? m[3];
+    if (/^claude(\s|$)/.test(value) && m[1] !== 'claude') out.set(m[1], value);
+  }
+  return out;
+}
+export function aliasLines(text, fish = false) {
+  const found = claudeAliases(text);
+  if (fish) return [`alias claude 'jinsil claude'`];
+  if (!found.size) return [`alias claude='jinsil claude'`];
+  return [...found].map(([name, value]) => `alias ${name}=${sq('jinsil ' + value)}`);
+}
+const block = (file, text, aliases) => {
+  const fish = file.endsWith('.fish');
+  const lines = [fish ? `fish_add_path ${q(binDir())}` : `export PATH=${q(binDir())}:"$PATH"`];
+  if (aliases) lines.push('# 클진요: Claude Code를 기록기 경유로 실행 (uninstall 시 원래 별칭으로 돌아감)', ...aliasLines(text, fish));
+  return `${START}\n${lines.join('\n')}\n${END}\n`;
+};
 const strip = text => text.replace(new RegExp(`\\n?${START}[\\s\\S]*?${END}\\n?`, 'g'), '\n').replace(/\n{3,}/g, '\n\n');
 
-export function installCommand({ node = process.execPath, entry }) {
+export function installCommand({ node = process.execPath, entry, aliases = true }) {
   fs.mkdirSync(binDir(), { recursive: true, mode: 0o700 });
   fs.writeFileSync(shimPath(), `#!/bin/sh\nexec ${q(node)} ${q(entry)} "$@"\n`, { mode: 0o755 });
   fs.chmodSync(shimPath(), 0o755);
   const changed = [];
   for (const f of rcFiles()) {
     const cur = fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : '';
-    const next = strip(cur).replace(/\s*$/, '') + (cur.trim() ? '\n\n' : '') + block(f);
+    const next = strip(cur).replace(/\s*$/, '') + (cur.trim() ? '\n\n' : '') + block(f, cur, aliases);
     if (next !== cur) { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, next); changed.push(f); }
   }
-  return { shim: shimPath(), rc: rcFiles(), changed, onPath: (process.env.PATH || '').split(path.delimiter).includes(binDir()) };
+  const wrapped = aliases ? aliasLines(rcFiles().map(f => fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : '').join('\n')) : [];
+  return { shim: shimPath(), rc: rcFiles(), changed, aliases: wrapped, onPath: (process.env.PATH || '').split(path.delimiter).includes(binDir()) };
 }
 
 export function uninstallCommand() {

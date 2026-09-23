@@ -100,7 +100,7 @@ export async function home(req, env) {
   <div class="tab">요금제별 순위</div><div class="panel"><div class="ranks">${rankTables}</div>
     <p class="note">순위가 낮을수록 같은 구독료로 한도를 더 빨리 쓰는 사용 패턴입니다(캐시·출력 비중에 따라 달라짐). 익명 태그만 공개합니다.</p></div>
   <div class="tab">참여 로그</div><div class="panel"><table><tr><th>시각(KST)</th><th>참여자</th><th>요금제</th><th>게이지 변화</th><th>환산</th></tr>${feedRows}</table></div>
-  <div class="panel noprint"><b>참여 방법</b> — 터미널에서 <code>npx jinsil setup</code> 후 <code>jinsil claude</code>로 평소처럼 작업하세요. <a href="/methodology">어떻게 계산하나요?</a></div>
+  <div class="panel noprint"><b>참여 방법</b> — 터미널에서 <code>npx jinsil setup</code> 한 번이면 끝. 이후 평소처럼 <code>claude</code>로 작업하면 기록·제출이 자동입니다. <a href="/methodology">어떻게 계산하나요?</a></div>
 </main>`, { user }), 200, { 'cache-control': 'no-store' });
 }
 
@@ -149,7 +149,7 @@ export async function me(req, env, user, data) {
     <div class="kpi"><b>${a.effective_usd_per_api_usd ? `${(a.effective_usd_per_api_usd * 100).toFixed(2)}¢` : '—'}</b><span>API 1달러어치를 쓰는 실효 단가</span></div>
     <div class="kpi"><b>${a.usd_per_100pct ? usd(a.usd_per_100pct) : '—'}</b><span>내 주간 100% 환산${a.vs_plan_mean !== null ? ` · 요금제 평균 대비 ${a.vs_plan_mean >= 0 ? '+' : ''}${(a.vs_plan_mean * 100).toFixed(0)}%` : ''}</span></div></div>
     <p class="note">최근 제출 기준 게이지: ${esc(latest || '—')} · 근거 주간 게이지 ${a.weekly_pct}%p</p></div>`;
-  }).join('') : '<div class="panel"><b>아직 제출된 구간이 없습니다.</b> 터미널에서 <code>npx jinsil setup</code> 후 <code>jinsil claude</code>로 작업하면 게이지가 오른 구간이 자동으로 제출됩니다.</div>';
+  }).join('') : '<div class="panel"><b>아직 제출된 구간이 없습니다.</b> 터미널에서 <code>npx jinsil setup</code> 후 평소처럼 <code>claude</code>로 작업하면 게이지가 오른 구간이 자동으로 제출됩니다.</div>';
   // 5시간 1%와 주간 1%는 단위가 달라 섞지 않는다 — 추이는 주간 구간만.
   const accepted = data.intervals.filter(i => i.status === 'accepted' && i.usd_per_pct !== null && i.gauge === '7d').slice().reverse();
   const series = accepted.map(i => ({ v: i.usd_per_pct }));

@@ -150,7 +150,8 @@ async function claude(flags, rest) {
 }
 
 const HELP = `jinsil ${VERSION} — 클진요 (클로드에게 진실을 요구합니다)
-  jinsil setup [--server URL] [--port N] [--no-login] [--no-path] 기록기 설치·서비스 등록·이 PC 연결
+  jinsil setup [--server URL] [--no-login] [--no-path] [--no-alias] [--no-auto-submit]
+                                                         기록기 설치·서비스 등록·이 PC 연결
   jinsil claude [claude 인수...]                         기록기를 거쳐 Claude Code 실행
   jinsil status | report                                 상태 / 로컬 계산 결과
   jinsil submit [--yes] [--dry-run] [--auto on|off]      구간 제출(첫 회는 미리보기·동의)
@@ -186,8 +187,14 @@ export async function run(argv) {
       }
       let cmd = null;
       if (!flags['no-path']) {
-        cmd = shell.installCommand({ entry });
-        console.log(`명령 등록: ${cmd.shim}${cmd.changed.length ? ` (PATH 추가: ${cmd.changed.join(', ')})` : ''}`);
+        cmd = shell.installCommand({ entry, aliases: !flags['no-alias'] });
+        console.log(`명령 등록: ${cmd.shim}${cmd.changed.length ? ` (셸 설정: ${cmd.changed.join(', ')})` : ''}`);
+        if (cmd.aliases.length) console.log(`기록기 경유 별칭: ${cmd.aliases.map(a => a.replace(/^alias\s+/, '').replace(/=.*$/, '')).join(', ')} (끄기: jinsil setup --no-alias)`);
+      }
+      if (!flags['no-auto-submit']) {
+        const cfg0 = loadConfig();
+        saveConfig({ auto_submit: true, ...(cfg0.consented_at ? {} : { consented_at: new Date().toISOString() }) });
+        console.log('자동 제출: 켜짐 — 서버에는 구간 계산값(게이지 변화·토큰 합계·요금제)만 갑니다. 프롬프트·응답·인증값·이메일은 보내지 않습니다. (끄기: jinsil submit --auto off)');
       }
       if (!flags['no-login']) await login(flags);
       if (cmd && !cmd.onPath) console.log(`새 터미널을 열면 \`jinsil claude\`를 쓸 수 있습니다. 이 터미널에서는 \`source ${cmd.rc[0]}\` 후 사용하세요.`);

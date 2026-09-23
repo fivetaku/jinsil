@@ -136,3 +136,29 @@ test('setup은 jinsil 명령을 PATH에 등록하고(중복 없이), uninstall�
   run(['setup', '--no-login', '--no-path', '--port', '10297'], { ...env2, JINSIL_RC_FILES: rc2 });
   assert.ok(!fs.existsSync(rc2) && !fs.existsSync(path.join(d2, 'home', 'bin')));
 });
+
+test('setup: 직접 claude 별칭만 jinsil 경유로 감싸고(라우터 별칭 제외), 없으면 claude 자체를 감싼다. 자동 제출은 기본 켜짐', () => {
+  const { d, env } = sandbox();
+  const rc = path.join(d, 'zshrc');
+  const orig = `alias cc='claude'\nalias ccd="claude --dangerously-skip-permissions"\nalias ccg='ANTHROPIC_BASE_URL=http://localhost:8317 claude --model x'\nalias cco="ocx claude"\n`;
+  fs.writeFileSync(rc, orig);
+  const e = { ...env, JINSIL_RC_FILES: rc };
+  const out = run(['setup', '--no-login', '--port', '10296'], e);
+  assert.match(out, /기록기 경유 별칭: cc, ccd/);
+  assert.match(out, /자동 제출: 켜짐/);
+  const text = fs.readFileSync(rc, 'utf8');
+  assert.ok(text.includes(`alias cc='jinsil claude'`) && text.includes(`alias ccd='jinsil claude --dangerously-skip-permissions'`));
+  assert.ok(!/alias ccg='jinsil|alias cco='jinsil|alias claude='jinsil/.test(text));
+  const cfg = JSON.parse(fs.readFileSync(path.join(d, 'home', 'config.json'), 'utf8'));
+  assert.equal(cfg.auto_submit, true); assert.ok(cfg.consented_at);
+  run(['setup', '--no-login', '--port', '10296'], e);
+  assert.equal(fs.readFileSync(rc, 'utf8').split("alias cc='jinsil claude'").length - 1, 1);
+  run(['uninstall'], e);
+  assert.equal(fs.readFileSync(rc, 'utf8'), orig);
+  const { d: d2, env: env2 } = sandbox();
+  const rc2 = path.join(d2, 'zshrc');
+  fs.writeFileSync(rc2, 'export A=1\n');
+  run(['setup', '--no-login', '--no-auto-submit', '--port', '10295'], { ...env2, JINSIL_RC_FILES: rc2 });
+  assert.ok(fs.readFileSync(rc2, 'utf8').includes(`alias claude='jinsil claude'`));
+  assert.notEqual(JSON.parse(fs.readFileSync(path.join(d2, 'home', 'config.json'), 'utf8')).auto_submit, true);
+});
