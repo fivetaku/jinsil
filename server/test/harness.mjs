@@ -19,7 +19,7 @@ export async function startServer(vars = {}, { persist } = {}) {
   const port = await freePort();
   const all = { DEV_IDP: '1', GOOGLE_CLIENT_ID: 'dev-client', GOOGLE_AUTH_URL: '/dev-idp/authorize', GOOGLE_TOKEN_URL: '/dev-idp/token',
     PROBATION_HOURS: '0', MIN_ACCOUNTS: '2', ...vars };
-  const args = ['dev', '--local', '--port', String(port), '--ip', '127.0.0.1', '--local-upstream', `127.0.0.1:${port}`, '--persist-to', dir, '--show-interactive-dev-session=false'];
+  const args = ['dev', '--local', '--port', String(port), '--ip', '127.0.0.1', '--local-upstream', `127.0.0.1:${port}`, '--persist-to', dir, '--show-interactive-dev-session=false', '--test-scheduled'];
   for (const [k, v] of Object.entries(all)) args.push('--var', `${k}:${v}`);
   const child = spawn(wrangler, args, { cwd: serverDir, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, CI: '1', WRANGLER_SEND_METRICS: 'false' } });
   let log = '';

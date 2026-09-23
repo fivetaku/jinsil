@@ -2,6 +2,7 @@
 import { json, html, redirect, readForm, setCookie } from './util.js';
 import * as auth from './auth.js';
 import * as device from './device.js';
+import { syncPrices } from './pricing.js';
 import * as intervals from './intervals.js';
 import * as stats from './stats.js';
 import * as pages from './pages.js';
@@ -77,5 +78,9 @@ export default {
       return json({ error: 'internal_error' }, 500);
     }
   },
-  async scheduled(_event, env) { await stats.snapshot(env); },
+  async scheduled(_event, env) {
+    const r = await syncPrices(env).catch(e => ({ ok: false, reason: String(e?.message || e) }));
+    console.log('price_sync', JSON.stringify({ ok: r.ok, models: r.models, changed: r.changed, held: r.held?.length, missing: r.missing, reason: r.reason }));
+    await stats.snapshot(env);
+  },
 };
