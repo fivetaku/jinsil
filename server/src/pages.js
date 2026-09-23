@@ -52,7 +52,11 @@ code,pre{background:#f4f4f4;padding:2px 6px;border-radius:4px;font-size:13px}pre
 function layout(title, body, { user = null } = {}) {
   return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(title)}</title><meta name="description" content="Claude 구독 한도 1%는 얼마일까. 참여자 PC에서 측정한 실제 토큰으로 요금제별 가성비를 공개합니다.">
-<meta property="og:title" content="클진요 — 클로드에게 진실을 요구합니다"><style>${CSS}</style></head><body>
+<meta property="og:type" content="website"><meta property="og:site_name" content="클진요"><meta property="og:locale" content="ko_KR">
+<meta property="og:title" content="클진요 — 클로드에게 진실을 요구합니다"><meta property="og:description" content="Claude 구독 한도 1%는 얼마일까. 참여자 PC에서 측정한 실제 토큰으로 요금제별 가성비를 공개합니다.">
+<meta property="og:url" content="https://jinsil.axwith.com/"><meta property="og:image" content="https://jinsil.axwith.com/og.png"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:image:alt" content="클로드에게 진실을 요구합니다 — 구독료 1달러로 얼마나 쓸 수 있나">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="클진요 — 클로드에게 진실을 요구합니다"><meta name="twitter:image" content="https://jinsil.axwith.com/og.png">
+<link rel="icon" href="/favicon.ico" sizes="32x32"><link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png"><link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png"><link rel="apple-touch-icon" href="/apple-touch-icon.png"><meta name="theme-color" content="#FFD400"><style>${CSS}</style></head><body>
 <header class="top"><div class="wrap"><a class="logo" href="/">클진요<small>클로드에게 진실을 요구합니다</small></a>
 <nav class="nav"><a href="/#stats" class="hide-m">통계</a><a href="/methodology">방법론</a><a href="/me">내 대시보드</a>
 ${user ? '' : '<a class="btn" href="/auth/google?next=/me">Google로 참여</a>'}</nav></div></header>${body}

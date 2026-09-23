@@ -46,3 +46,4 @@ server/.dev.vars
 *.tgz
 .fablize/
 .e2e/
+.imagen/
