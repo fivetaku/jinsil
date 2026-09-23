@@ -39,7 +39,7 @@ test('순위: 요금제별 내림차순, 익명 태그', async () => {
 
 test('방법론: 계산식·스티커 규칙·한계·개인정보', async () => {
   const { t } = await get('/methodology');
-  for (const s of ['× 4.35주', '가성비 배수', '광고보다 적음', '이론적 상한', '한계', '개인정보', '~/.jinsil']) assert.ok(t.includes(s), s);
+  for (const s of ['30일 환산', '가성비 배수', '광고보다 적음', '이론적 상한', '한계', '개인정보', '~/.jinsil']) assert.ok(t.includes(s), s);
 });
 
 test('/me: 순위·상위 %·실효 단가·평균 대비·추이·이력·CSV·리포트·기기·삭제', async () => {

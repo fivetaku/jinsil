@@ -1,6 +1,6 @@
 {
   "name": "jinsil",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "클진요 — 클로드에게 진실을 요구합니다. Claude 구독 한도를 내 PC에서 측정하고 계산값만 제출합니다.",
   "type": "module",
   "bin": {

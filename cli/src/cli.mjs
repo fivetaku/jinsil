@@ -101,16 +101,18 @@ function report() {
     const span = i.g_end - i.g_start;
     console.log(`${i.gauge.padEnd(6)}  ${`${i.g_start}%→${i.g_end}%`.padEnd(12)}  ${String(i.requests).padStart(5)}  ${c === null ? '   미확정' : ('$' + c.toFixed(2)).padStart(9)}  ${c === null ? '  미확정' : ('$' + (c / span).toFixed(2)).padStart(8)}  ${i.quality.join(',') || '정상'}`);
   }
-  const weekly = intervals.filter(i => i.gauge === '7d' && !i.quality.length);
+  // 가장 최근 계정·요금제의 주간 구간만 합산한다(계정이나 요금제가 섞이면 값이 틀어진다).
+  const lastW = intervals.filter(i => i.gauge === '7d').at(-1);
+  const weekly = intervals.filter(i => i.gauge === '7d' && !i.quality.length && lastW && i.account_fp === lastW.account_fp && planOf(i.tier) === planOf(lastW.tier));
   const cost = weekly.map(i => localCost(i.tokens_by_model));
   const pct = weekly.reduce((s, i) => s + i.g_end - i.g_start, 0);
   if (weekly.length && cost.every(c => c !== null) && pct > 0) {
     const w100 = cost.reduce((a, b) => a + b, 0) / pct * 100;
     const plan = planOf(weekly.at(-1).tier);
-    console.log(`\n주간 100% 환산(잠정 API 정가): $${w100.toFixed(0)} · 근거 주간 ${pct}%p`);
+    console.log(`\n주간 100% 환산(잠정 API 정가): $${w100.toFixed(0)} · 근거 주간 ${pct}%p${pct < 5 ? ' (5%p 미만 — 오차 큼, 서버 통계 미반영)' : ''}`);
     if (plan) {
       const monthly = w100 * WEEKS_PER_MONTH;
-      console.log(`월 최대 가치 ≈ $${monthly.toFixed(0)} · 구독료 $${PLAN_PRICES[plan]}의 ${(monthly / PLAN_PRICES[plan]).toFixed(1)}배 · API 1달러를 ${(PLAN_PRICES[plan] / monthly * 100).toFixed(2)}센트에 사용`);
+      console.log(`30일 환산 가치 ≈ $${monthly.toFixed(0)} · 구독료 $${PLAN_PRICES[plan]}의 ${(monthly / PLAN_PRICES[plan]).toFixed(1)}배 · API 1달러를 ${(PLAN_PRICES[plan] / monthly * 100).toFixed(2)}센트에 사용`);
     }
     console.log('매주 100%를 다 썼을 때의 이론적 상한이며, 단가는 잠정값입니다.');
   } else console.log('\n주간 100% 환산: 측정 대기 (정상 주간 구간 부족)');

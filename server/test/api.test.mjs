@@ -104,13 +104,13 @@ test('같은 PC를 다시 연결하면 예전 연결은 해제되어 한 대로 
 
 test('가성비 배수·요금제 순위·스티커(기준 Max 5x)·이상치 제외', async () => {
   // Max 5x 4계정: 주간 3%p씩. 비용 $6×(개수) — 1%당 $6/2=3 → 100% $300 ... 계정마다 다르게
-  const five = [['5', 2], ['6', 3], ['7', 4], ['8', 400]]; // '8'은 극단값 → 이상치
+  const five = [['3', 2.5], ['4', 3.5], ['5', 2], ['6', 3], ['7', 4], ['8', 400]]; // '8'은 극단값 → 이상치
   for (const [c, mult] of five) {
-    const body = interval({ account_fp: fp(c), g_start: 0, g_end: 3, tokens_by_model: { 'claude-opus-5-5': { ...zero, input: 1_000_000 * mult } } });
+    const body = interval({ account_fp: fp(c), g_start: 0, g_end: 5, tokens_by_model: { 'claude-opus-5-5': { ...zero, input: 1_000_000 * mult } } });
     assert.equal((await post(srv.base, aliceToken, body)).body.status, 'accepted');
   }
   for (const [c, mult] of [['b', 5], ['c', 5]]) {
-    const body = interval({ account_fp: fp(c), tier: 'default_claude_max_20x', g_start: 0, g_end: 3, tokens_by_model: { 'claude-opus-5-5': { ...zero, input: 1_000_000 * mult } } });
+    const body = interval({ account_fp: fp(c), tier: 'default_claude_max_20x', g_start: 0, g_end: 5, tokens_by_model: { 'claude-opus-5-5': { ...zero, input: 1_000_000 * mult } } });
     assert.equal((await post(srv.base, bobToken, body)).body.status, 'accepted');
   }
   const s = await (await fetch(`${srv.base}/api/stats`)).json();
@@ -122,7 +122,7 @@ test('가성비 배수·요금제 순위·스티커(기준 Max 5x)·이상치 �
   for (let i = 1; i < ranked.length; i++) assert.ok(ranked[i - 1].value_multiple >= ranked[i].value_multiple);
   assert.ok(Math.abs(m5.value_multiple - m5.mean_usd_per_100pct * 30 / 7 / 100) < 1e-9);
   // 20x: 1%당 $20/3... 100% = 5*4/3*100
-  assert.ok(Math.abs(m20.mean_usd_per_100pct - 5 * 4 / 3 * 100) < 1e-9);
+  assert.ok(Math.abs(m20.mean_usd_per_100pct - 5 * 4 / 5 * 100) < 1e-9);
   assert.equal(s.baseline, 'max5x');
   const st20 = s.stickers.max20x.map(t => t.text);
   assert.ok(st20.some(t => /^가격 2배 → 가치 /.test(t)));
@@ -161,7 +161,7 @@ test('스티커 순수 로직: 가치 배수가 가격 배수의 80% 미만이�
 test('내 데이터 삭제 후 통계·순위에서 빠진다', async () => {
   const carol = await login(srv.base, 'carol');
   const tok = (await linkDevice(srv.base, carol)).token.device_token;
-  await post(srv.base, tok, interval({ account_fp: fp('d'), g_start: 0, g_end: 3 }));
+  await post(srv.base, tok, interval({ account_fp: fp('d'), g_start: 0, g_end: 5 }));
   let s = await (await fetch(`${srv.base}/api/stats`)).json();
   assert.ok(s.ranking.max5x.some(r => r.tag === 'dddd'));
   const csrf = await csrfOf(srv.base, carol, '/me');
@@ -171,4 +171,44 @@ test('내 데이터 삭제 후 통계·순위에서 빠진다', async () => {
   s = await (await fetch(`${srv.base}/api/stats`)).json();
   assert.ok(!s.ranking.max5x.some(r => r.tag === 'dddd'));
   assert.equal((await post(srv.base, tok, interval({ account_fp: fp('d'), g_start: 5, g_end: 6 }))).status, 401);
+});
+
+test('공개 기준 미달 요금제는 API에 수치를 싣지 않고 피드에서도 빠진다(1계정 합성)', async () => {
+  const dave = await login(srv.base, 'dave');
+  const tok = (await linkDevice(srv.base, dave)).token.device_token;
+  const body = interval({ account_fp: fp('f'), tier: 'default_claude_pro', g_start: 0, g_end: 6 });
+  const r = await post(srv.base, tok, body);
+  assert.equal(r.body.status, 'accepted', JSON.stringify(r.body));
+  const s = await (await fetch(`${srv.base}/api/stats`)).json();
+  const pro = s.plans.pro;
+  assert.equal(pro.shown, false);
+  for (const k of ['mean_usd_per_100pct', 'min', 'max', 'p25', 'p75', 'monthly_value', 'value_multiple', 'five_hour_mean_usd_per_100pct'])
+    assert.equal(pro[k], null, k);
+  assert.deepEqual(s.ranking.pro, []);
+  const feed = await (await fetch(`${srv.base}/api/feed`)).json();
+  assert.ok(!feed.some(r => r.plan === 'pro'), '미달 요금제 제출은 공개 피드에 없음');
+  // 5시간 지표는 별도 표본 수로 판정: 주간은 공개돼도 5시간 표본이 모자라면 null
+  const m5 = s.plans.max5x;
+  if (m5.shown && m5.n_5h < m5.min_accounts) assert.equal(m5.five_hour_mean_usd_per_100pct, null);
+});
+
+test('요금제를 바꾼 계정은 현재 요금제 구간만 집계한다', async () => {
+  const f = fp('e');
+  assert.equal((await post(srv.base, bobToken, interval({ account_fp: f, tier: 'default_claude_max_5x', g_start: 0, g_end: 10, reset_at: '2030-02-01T00:00:00.000Z' }))).body.status, 'accepted');
+  assert.equal((await post(srv.base, bobToken, interval({ account_fp: f, tier: 'default_claude_max_20x', g_start: 0, g_end: 6, reset_at: '2030-03-01T00:00:00.000Z',
+    t_start: '2026-09-21T10:00:00.000Z', t_end: '2026-09-21T11:00:00.000Z' }))).body.status, 'accepted');
+  const me = await (await fetch(`${srv.base}/me.json`, { headers: { cookie: bob } })).json();
+  const a = me.accounts.find(x => x.tag === 'eeee');
+  assert.equal(a.plan, 'max20x');
+  assert.equal(a.weekly_pct, 6, 'Max 5x 시절 10%p는 섞이지 않음');
+});
+
+test('/me: 최근 게이지는 게이지마다 하나만', async () => {
+  const f = fp('9');
+  for (const [g0, g1, t] of [[0, 3, '10'], [3, 7, '12']])
+    assert.equal((await post(srv.base, aliceToken, interval({ account_fp: f, gauge: '5h', g_start: g0, g_end: g1, reset_at: '2030-01-01T05:00:00.000Z',
+      t_start: `2026-09-22T${t}:00:00.000Z`, t_end: `2026-09-22T${t}:30:00.000Z` }))).body.status, 'accepted');
+  const me = await (await fetch(`${srv.base}/me.json`, { headers: { cookie: alice } })).json();
+  const a = me.accounts.find(x => x.tag === '9999');
+  assert.deepEqual(a.latest.map(l => [l.gauge, l.g_end]), [['5h', 7]]);
 });

@@ -10,6 +10,9 @@ import { LEDGER_FILE, LIFECYCLE_FILE, COLUMNS } from './recorder.mjs';
 import { TOKEN_KEYS, costOf, PRICES } from './prices.mjs';
 
 export const MIN_TICKS = { '5h': 3, '7d': 1 };
+// 이웃 관측 간 허용 최대 상승(%p). 넘으면 기록 공백으로 보고 구간을 잇지 않는다.
+export const MAX_STEP = { '5h': 5, '7d': 2 };
+export const GAP_MS = 3 * 60000;
 const RESET_TOLERANCE_MS = 2000;
 const PENDING_GRACE_MS = 10 * 60000;
 
@@ -108,19 +111,24 @@ export function computeIntervals({ rows, flags: ledgerFlags = new Set(), lifecyc
         else { w.rows.push(r); if (w.reset === null) w.reset = rs; }
       }
       for (const w of windows) {
-        // 틱 찾기: 흔들림(역행)은 무시하고 최댓값 기준
+        // 틱 찾기: 흔들림(역행)은 무시하고 최댓값 기준.
+        // 이웃한 두 관측 사이에 게이지가 MAX_STEP을 넘게 뛰면, 그 사이에 기록되지 않은 사용(다른 경로·기록 중단)이
+        // 있었다고 보고 체인을 끊는다(seg 증가). 반영 지연으로 인한 정상 점프는 실측 최대 +4%p(5h).
         const ticks = [];
-        let max = w.rows[0].g[gauge];
+        let max = w.rows[0].g[gauge], seg = 0;
         for (let i = 1; i < w.rows.length; i++) {
           const v = w.rows[i].g[gauge];
           if (v > max) {
-            for (let k = max + 1; k <= v; k++) ticks.push({ k, t: w.rows[i].ts });
+            // 급점프이거나, 앞 관측과 GAP_MS 넘게 떨어졌는데 올랐으면(반영 지연은 1분 안팎) 기록 밖 사용으로 본다.
+            if (v - max > MAX_STEP[gauge] || w.rows[i].ts - w.rows[i - 1].ts > GAP_MS) { seg++; ticks.push({ k: v, t: w.rows[i].ts, seg }); }
+            else for (let k = max + 1; k <= v; k++) ticks.push({ k, t: w.rows[i].ts, seg });
             max = v;
           }
         }
-        // 틱 체인을 최소 틱 수로 끊는다
+        // 틱 체인을 최소 틱 수로 끊는다(같은 seg 안에서만)
         let a = 0;
         for (let b = 1; b < ticks.length; b++) {
+          if (ticks[b].seg !== ticks[a].seg) { a = b; continue; }
           if (ticks[b].k - ticks[a].k < minTicks[gauge] || ticks[b].t === ticks[a].t) continue;
           const A = ticks[a], B = ticks[b];
           const q = new Set(ledgerFlags);

@@ -40,3 +40,30 @@ test('cron 단가 동기화: 변경분만 반영, 급변 보류, 동일값은 �
   assert.equal(res.models, 9, 'bedrock·openai 항목 제외');
   assert.equal(res.held, 1, 'opus-4-8 input 3배는 보류');
 });
+
+test('같은 날 두 번 바뀐 단가도 이력을 덮어쓰지 않는다(valid_from=시각, INSERT만)', async () => {
+  const { syncPrices } = await import('../src/pricing.js');
+  const rows = [{ model: 'claude-opus-5', component: 'input', usd_per_mtok: 5, valid_from: '2026-01-01' }];
+  const DB = {
+    prepare: sql => ({
+      bind: (...a) => ({ sql, a }),
+      all: async () => ({ results: [...rows].sort((x, y) => (x.valid_from < y.valid_from ? 1 : -1)) }),
+    }),
+    batch: async stmts => {
+      for (const { sql, a } of stmts) {
+        if (!sql.startsWith('INSERT')) continue;
+        assert.ok(!/OR REPLACE/.test(sql), '덮어쓰기 금지');
+        const [model, component, usd_per_mtok, valid_from] = a;
+        if (rows.some(r => r.model === model && r.component === component && r.valid_from === valid_from)) throw Error('UNIQUE constraint');
+        rows.push({ model, component, usd_per_mtok, valid_from });
+      }
+    },
+  };
+  const text = v => JSON.stringify(Object.fromEntries(['claude-opus-5', 'claude-opus-5-5', 'claude-opus-4-8', 'claude-fable-5-1', 'claude-sonnet-5', 'claude-haiku-4-5', 'claude-sonnet-4-6', 'claude-fable-5']
+    .map(m => [m, entry(m === 'claude-opus-5' ? v : 5, 25, 6.25, 10, 0.5)])), null, 4);
+  const fetchOf = v => async () => ({ ok: true, text: async () => text(v) });
+  await syncPrices({ DB }, { fetchImpl: fetchOf(5.5), now: new Date('2026-09-24T01:00:00Z') });
+  await syncPrices({ DB }, { fetchImpl: fetchOf(6), now: new Date('2026-09-24T13:00:00Z') });
+  const hist = rows.filter(r => r.model === 'claude-opus-5' && r.component === 'input').map(r => r.usd_per_mtok).sort();
+  assert.deepEqual(hist, [5, 5.5, 6]);
+});

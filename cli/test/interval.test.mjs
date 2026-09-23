@@ -121,3 +121,20 @@ test('로컬 비용: 미등록 모델·TTL 미확인이면 null (0으로 두지 
   assert.equal(localCost({ 'unknown-model': { input: 1, output: 0, cache_write_5m: 0, cache_write_1h: 0, cache_read: 0, cache_write_unknown: 0 } }), null);
   assert.equal(localCost({ 'claude-opus-5-5': { input: 1, output: 0, cache_write_5m: 0, cache_write_1h: 0, cache_read: 0, cache_write_unknown: 5 } }), null);
 });
+
+test('기록 공백: 이웃 관측 사이 급점프(5h >5%p)면 그 사이를 구간으로 잇지 않는다', () => {
+  // 10,11 → (기록 밖 사용) → 40,41,42,43 : 11→40 은 끊고 40→43만 구간
+  const { intervals } = compute(seq([0.10, 0.11, 0.40, 0.41, 0.42, 0.43]));
+  const five = intervals.filter(i => i.gauge === '5h');
+  assert.deepEqual(five.map(i => `${i.g_start}→${i.g_end}`), ['40→43']);
+});
+
+test('기록 공백: 앞 관측과 3분 넘게 떨어졌는데 게이지가 오르면 끊는다(주간 1%p라도)', () => {
+  n = 0;
+  const rows = [row({ u7d: 0.15 }), row({ u7d: 0.15 })];
+  const later = T0 + 10 * 60000; // 10분 뒤 첫 관측에서 16%
+  rows.push(row({ u7d: 0.16, ts_ms: later, started_ms: later - 500, ended_ms: later + 500 }));
+  for (let k = 1; k <= 3; k++) rows.push(row({ u7d: 0.16 + k / 100, ts_ms: later + k * 1000, started_ms: later + k * 1000 - 500, ended_ms: later + k * 1000 + 500 }));
+  const seven = compute(rows).intervals.filter(i => i.gauge === '7d');
+  assert.deepEqual(seven.map(i => `${i.g_start}→${i.g_end}`), ['16→17', '17→18', '18→19'], '15→16(공백 건너기)은 없음');
+});

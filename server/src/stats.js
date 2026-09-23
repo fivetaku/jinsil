@@ -2,7 +2,7 @@
 import { planOf, PLAN_LABEL, WEEKS_PER_MONTH } from './util.js';
 
 const PLANS = ['pro', 'max5x', 'max20x', 'team_standard', 'team_premium'];
-const MIN_WEEKLY_PCT = 3;             // 순위·통계 편입 최소 주간 게이지 합(%p)
+const MIN_WEEKLY_PCT = 5;             // 순위·통계 편입 최소 주간 게이지 합(%p)
 const ADVERT_GAP = 0.8;               // 가치 배수가 가격 배수의 80% 미만이면 '광고보다 적음'
 // 이 규칙의 flag는 해당 계정의 잘못이 아니다(다른 사용자가 이 계정 지문으로 제출 시도).
 const NON_PENALTY_RULES = ['account_bound_to_other_user'];
@@ -25,8 +25,9 @@ export async function accountStats(env, now = Date.now()) {
   const prices = await planPrices(env);
   const [{ results: accounts }, { results: sums }, { results: flagged }] = await Promise.all([
     env.DB.prepare('SELECT account_fp, user_id, tier_latest, public_tag, first_seen FROM claude_accounts').all(),
-    env.DB.prepare(`SELECT account_fp, gauge, SUM(g_end - g_start) AS pct, SUM(cost_usd) AS cost, COUNT(*) AS n
-      FROM intervals WHERE status = 'accepted' AND cost_usd IS NOT NULL GROUP BY account_fp, gauge`).all(),
+    // 구간 당시 tier별로 합산한다. 요금제를 바꾼 계정의 과거 사용량이 새 요금제 값에 섞이지 않게(현재 요금제 구간만 사용).
+    env.DB.prepare(`SELECT account_fp, gauge, tier, SUM(g_end - g_start) AS pct, SUM(cost_usd) AS cost, COUNT(*) AS n
+      FROM intervals WHERE status = 'accepted' AND cost_usd IS NOT NULL GROUP BY account_fp, gauge, tier`).all(),
     env.DB.prepare(`SELECT DISTINCT account_fp FROM flags WHERE account_fp IS NOT NULL AND (decision IS NULL OR decision <> 'dismissed')
       AND rule NOT IN (${NON_PENALTY_RULES.map(() => '?').join(',')})`).bind(...NON_PENALTY_RULES).all(),
   ]);
@@ -34,12 +35,13 @@ export async function accountStats(env, now = Date.now()) {
   const by = new Map(accounts.map(a => [a.account_fp, { ...a, plan: planOf(a.tier_latest), weekly_pct: 0, weekly_cost: 0, five_pct: 0, five_cost: 0 }]));
   for (const s of sums) {
     const a = by.get(s.account_fp);
-    if (!a) continue;
-    if (s.gauge === '7d') { a.weekly_pct = s.pct; a.weekly_cost = s.cost; } else { a.five_pct = s.pct; a.five_cost = s.cost; }
+    if (!a || !a.plan || planOf(s.tier) !== a.plan) continue;
+    if (s.gauge === '7d') { a.weekly_pct += s.pct; a.weekly_cost += s.cost; } else { a.five_pct += s.pct; a.five_cost += s.cost; }
   }
   const list = [...by.values()].map(a => {
     const price = a.plan ? prices[a.plan] : undefined;
-    const w100 = a.weekly_pct > 0 ? a.weekly_cost / a.weekly_pct * 100 : null;
+    // 주간 게이지가 MIN_WEEKLY_PCT(%p) 쌓이기 전엔 1% 양자화·반영 지연 오차가 커서 환산값을 내지 않는다.
+    const w100 = a.weekly_pct >= MIN_WEEKLY_PCT ? a.weekly_cost / a.weekly_pct * 100 : null;
     const monthly = w100 === null ? null : w100 * WEEKS_PER_MONTH;
     let ineligible = null;
     if (!a.plan || !price) ineligible = 'plan_unknown';
@@ -47,7 +49,7 @@ export async function accountStats(env, now = Date.now()) {
     else if (flaggedSet.has(a.account_fp)) ineligible = 'flagged';
     else if (now - a.first_seen < probationMs) ineligible = 'probation';
     return { account_fp: a.account_fp, user_id: a.user_id, tag: a.public_tag, plan: a.plan, tier: a.tier_latest, price: price ?? null,
-      weekly_pct: a.weekly_pct, weekly_cost: a.weekly_cost, usd_per_100pct: w100,
+      weekly_pct: a.weekly_pct, weekly_cost: a.weekly_cost, usd_per_100pct: w100, min_weekly_pct: MIN_WEEKLY_PCT,
       five_hour_usd_per_100pct: a.five_pct > 0 ? a.five_cost / a.five_pct * 100 : null,
       monthly_value: monthly, value_multiple: monthly !== null && price ? monthly / price : null,
       effective_usd_per_api_usd: monthly ? price / monthly : null, probation: now - a.first_seen < probationMs,
@@ -75,11 +77,14 @@ export function planStats(list, env, prices) {
     const v = el.map(a => a.usd_per_100pct).sort((x, y) => x - y);
     const mean = v.length ? v.reduce((s, x) => s + x, 0) / v.length : null;
     const five = el.map(a => a.five_hour_usd_per_100pct).filter(x => x !== null);
-    const monthly = mean === null ? null : mean * WEEKS_PER_MONTH;
-    out[plan] = { plan, label: PLAN_LABEL[plan], price: prices[plan] ?? null, n: el.length, min_accounts: min,
-      participants: list.filter(a => a.plan === plan).length, shown: el.length >= min,
-      mean_usd_per_100pct: mean, min: v[0] ?? null, max: v.at(-1) ?? null, p25: quantile(v, 0.25), p75: quantile(v, 0.75),
-      five_hour_mean_usd_per_100pct: five.length ? five.reduce((s, x) => s + x, 0) / five.length : null,
+    const shown = el.length >= min, shown5 = five.length >= min;
+    const monthly = shown && mean !== null ? mean * WEEKS_PER_MONTH : null;
+    // 공개 기준 미달이면 수치를 서버에서 비운다(UI 숨김만으로는 API로 샌다). 5시간 지표는 별도 표본 수로 판정.
+    out[plan] = { plan, label: PLAN_LABEL[plan], price: prices[plan] ?? null, n: el.length, n_5h: five.length, min_accounts: min,
+      participants: list.filter(a => a.plan === plan).length, shown, shown_5h: shown5,
+      mean_usd_per_100pct: shown ? mean : null, min: shown ? v[0] ?? null : null, max: shown ? v.at(-1) ?? null : null,
+      p25: shown ? quantile(v, 0.25) : null, p75: shown ? quantile(v, 0.75) : null,
+      five_hour_mean_usd_per_100pct: shown5 ? five.reduce((s, x) => s + x, 0) / five.length : null,
       monthly_value: monthly, value_multiple: monthly !== null && prices[plan] ? monthly / prices[plan] : null };
   }
   return out;
@@ -124,10 +129,12 @@ export async function publicStats(env) {
 }
 
 export async function feed(env, limit = 30) {
+  const plans = planStats(await accountStats(env), env, await planPrices(env));
   const probationMs = Number(env.PROBATION_HOURS ?? 24) * 3600000;
   const { results } = await env.DB.prepare(`SELECT i.created_at, i.gauge, i.g_start, i.g_end, i.status, i.exclude_reason, i.usd_per_pct, i.tier,
     a.public_tag, a.first_seen FROM intervals i JOIN claude_accounts a ON a.account_fp = i.account_fp ORDER BY i.created_at DESC LIMIT ?`).bind(limit).all();
-  return results.map(r => ({
+  // 공개 기준 미달 요금제의 제출 내역은 공개 피드에 싣지 않는다.
+  return results.filter(r => plans[planOf(r.tier)]?.shown).map(r => ({
     at: new Date(Math.floor(r.created_at / 60000) * 60000).toISOString(), tag: r.public_tag, plan: planOf(r.tier),
     gauge: r.gauge, range: `${r.g_start}%→${r.g_end}%`,
     // 구간 하나의 1%당 값은 게이지 반영 지연 때문에 크게 튄다 — 공개 피드에는 싣지 않고 계정 합산값만 쓴다.
@@ -143,7 +150,9 @@ export async function me(env, userId) {
   const plans = planStats(list, env, prices);
   const mine = list.filter(a => a.user_id === userId);
   const accounts = await Promise.all(mine.map(async a => {
-    const last = await env.DB.prepare('SELECT gauge, g_end, t_end FROM intervals WHERE account_fp = ? ORDER BY t_end DESC, created_at DESC LIMIT 2').bind(a.account_fp).all();
+    // 게이지마다 가장 최근 구간 하나(5시간 두 개가 함께 나오던 표시 버그 수정).
+    const last = await env.DB.prepare(`SELECT gauge, g_end, t_end FROM intervals i WHERE account_fp = ? AND t_end = (SELECT MAX(t_end) FROM intervals WHERE account_fp = i.account_fp AND gauge = i.gauge)
+      GROUP BY gauge ORDER BY gauge`).bind(a.account_fp).all();
     const planMean = a.plan ? plans[a.plan].mean_usd_per_100pct : null;
     return { tag: a.tag, plan: a.plan, tier: a.tier, eligible: a.eligible, ineligible: a.ineligible, probation: a.probation,
       weekly_pct: a.weekly_pct, usd_per_100pct: a.usd_per_100pct, monthly_value: a.monthly_value, value_multiple: a.value_multiple,

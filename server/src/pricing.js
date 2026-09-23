@@ -48,6 +48,8 @@ export async function syncPrices(env, { fetchImpl = fetch, now = new Date() } = 
   for (const x of results) { current[x.model] ||= {}; if (current[x.model][x.component] === undefined) current[x.model][x.component] = x.usd_per_mtok; }
   const missing = Object.keys(current).filter(mo => !fresh[mo]);
   const day = now.toISOString().slice(0, 10);
+  // 변경 행의 valid_from은 시각(ISO)으로 — 같은 날 두 번 바뀌어도 앞 이력을 덮어쓰지 않는다.
+  const at = now.toISOString();
   const hash = (await sha256Hex(text)).slice(0, 16);
   const source = `${url}#sha256:${hash}`;
   const inserts = [], held = [];
@@ -56,8 +58,8 @@ export async function syncPrices(env, { fetchImpl = fetch, now = new Date() } = 
       const old = current[model]?.[c];
       if (old === v) continue;
       if (old !== undefined && old > 0 && Math.abs(v - old) / old > MAX_JUMP) { held.push({ model, component: c, old, new: v }); continue; }
-      inserts.push(env.DB.prepare('INSERT OR REPLACE INTO prices (model, component, usd_per_mtok, valid_from, source_url, verified_at) VALUES (?, ?, ?, ?, ?, ?)')
-        .bind(model, c, v, day, source, day));
+      inserts.push(env.DB.prepare('INSERT INTO prices (model, component, usd_per_mtok, valid_from, source_url, verified_at) VALUES (?, ?, ?, ?, ?, ?)')
+        .bind(model, c, v, at, source, day));
     }
   }
   // 값이 같아도 출처 확인 기록: 기존 행의 verified_at 이 비어 있으면 이번 대조로 채운다.

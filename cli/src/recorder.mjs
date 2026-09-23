@@ -44,9 +44,9 @@ export function startRecorder({
   if (!fs.existsSync(TSV)) fs.writeFileSync(TSV, header, { mode: 0o600 });
   else if (fs.readFileSync(TSV, 'utf8').split('\n')[0] + '\n' !== header) throw Error('Ledger schema mismatch; use a new LEDGER_DIR');
   fs.chmodSync(TSV, 0o600);
-  // 한 디렉터리에 기록 프로세스 하나만. 남은 잠금은 자동으로 지우지 않는다.
+  // 한 디렉터리에 기록 프로세스 하나만. 잠금에 적힌 PID가 이미 죽었으면(크래시·정전) 남은 잠금을 정리하고 연다.
   const LOCK = path.join(dir, 'writer.lock');
-  const lockFd = fs.openSync(LOCK, 'wx', 0o600);
+  const lockFd = acquireLock(LOCK);
   fs.writeSync(lockFd, JSON.stringify({ pid: process.pid, started_ms: Date.now() }));
   let lockReleased = false;
   const releaseLock = () => { if (lockReleased) return; lockReleased = true; try { fs.closeSync(lockFd); fs.unlinkSync(LOCK); } catch {} };
@@ -317,4 +317,20 @@ export function startRecorder({
   });
   const close = () => new Promise(resolve => { clearInterval(timer); server.close(() => { releaseLock(); resolve(); }); });
   return { server, close, dir };
+}
+
+// 남은 잠금 정리: PID가 없거나 살아 있지 않으면(ESRCH) 지우고 다시 연다. 살아 있으면 기존대로 실패(EEXIST).
+export function acquireLock(LOCK) {
+  try { return fs.openSync(LOCK, 'wx', 0o600); } catch (e) {
+    if (e.code !== 'EEXIST') throw e;
+    let pid = null;
+    try { pid = JSON.parse(fs.readFileSync(LOCK, 'utf8')).pid; } catch {}
+    let alive = false;
+    if (Number.isInteger(pid) && pid > 0 && pid !== process.pid) {
+      try { process.kill(pid, 0); alive = true; } catch (k) { alive = k.code === 'EPERM'; }
+    }
+    if (alive) throw e;
+    fs.unlinkSync(LOCK);
+    return fs.openSync(LOCK, 'wx', 0o600);
+  }
 }

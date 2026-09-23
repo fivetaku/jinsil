@@ -4,7 +4,7 @@ import { dataDir, submitStateFile } from './paths.mjs';
 import { readLedgerDir, computeIntervals } from './interval.mjs';
 import { loadConfig, saveConfig, loadDevice } from './config.mjs';
 
-export const CLIENT_VERSION = '0.1.5';
+export const CLIENT_VERSION = '0.1.6';
 
 export function submittedIds() {
   const f = submitStateFile();

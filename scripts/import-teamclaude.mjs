@@ -4,7 +4,8 @@
 // 쓰는 값: 계정 이름→accountUuid(teamclaude 설정), 응답 헤더 게이지·리셋, 스트림 usage(5분/1시간 캐시 구분 포함).
 // 쓰지 않는 값: 프롬프트·응답 본문·인증값·이메일·요청 ID — 장부에도 남기지 않는다.
 // 요금제: 계정 토큰으로 /api/oauth/profile 조회(읽기 전용, 토큰은 메모리에서만). 조회 실패 계정은 요금제 미확인 → 통계 제외.
-// 사용: node scripts/import-teamclaude.mjs [--dry-run] [--submit]
+// 사용: node scripts/import-teamclaude.mjs [--dry-run]
+// 제출(--submit)은 비활성: '완전성 통과 구간만' 고르는 방식이 짧은 구간 위주의 선택 편향을 만든다(09-23 실측, 주간 $231 vs 실제 $729~1,116).
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -139,7 +140,8 @@ if (Object.keys(q).length) console.log('품질 플래그:', q);
 console.log(`완전성 검증 통과 + 요금제 확인: ${verified.length}개 구간만 제출 대상`);
 // 제출 대상만 남기도록 장부 경로를 쓰는 submit 대신, 같은 형식으로 직접 제출한다.
 
-if (args.has('--submit') || args.has('--dry-run')) {
+if (args.has('--submit')) { console.error('--submit은 선택 편향 때문에 비활성화됐습니다(0.1.6). 다계정 풀은 jinsil 0.2의 --proxy 모드를 쓰세요.'); process.exit(2); }
+if (args.has('--dry-run')) {
   // 제출은 이 PC의 기기 연결을 그대로 쓴다(서버 사용자 = 이 PC 소유자).
   for (const f of ['device.json', 'config.json']) {
     const src = path.join(os.homedir(), '.jinsil', f);
