@@ -12,6 +12,7 @@ import { createHash } from 'node:crypto';
 import { accountFingerprint } from './recorder.mjs';
 import { getJson, POLL_MS, ACTIVE_MS } from './gauge.mjs';
 import { PRICES } from './prices.mjs';
+import { tierFromProfile } from './tiers.mjs';
 
 export const poolConfigPath = () => process.env.JINSIL_TEAMCLAUDE_CONFIG || path.join(os.homedir(), '.config', 'teamclaude.json');
 export const poolLogPath = () => process.env.JINSIL_TEAMCLAUDE_LOG || path.join(os.homedir(), 'Library', 'Logs', 'teamclaude-usage.tsv');
@@ -93,7 +94,7 @@ export function createPoolSampler({ get = getJson, now = () => Date.now() } = {}
       s.lastPoll = t;
       if (!s.tier || t - s.tierAt > 3600000) {
         const p = await get('/api/oauth/profile', a.token);
-        if (p.status === 200 && typeof p.json?.organization?.rate_limit_tier === 'string') { s.tier = p.json.organization.rate_limit_tier; s.tierAt = t; }
+        if (p.status === 200 && tierFromProfile(p.json)) { s.tier = tierFromProfile(p.json); s.tierAt = t; }
       }
       const r = await get('/api/oauth/usage', a.token);
       if (r.status === 429) { s.nextAllowed = t + (r.retryAfter ? r.retryAfter * 1000 : s.backoff); s.backoff = Math.min(s.backoff * 2, 3600000); s.status = 'rate_limited'; continue; }

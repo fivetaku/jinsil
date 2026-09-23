@@ -6,6 +6,7 @@ import zlib from 'node:zlib';
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
+import { tierFromProfile } from './tiers.mjs';
 import { StringDecoder } from 'node:string_decoder';
 import { dataDir } from './paths.mjs';
 
@@ -96,7 +97,7 @@ export function startRecorder({
       const uuid = json?.account?.uuid;
       if (status === 200 && typeof uuid === 'string' && uuid) {
         a.fp = accountFingerprint(uuid);
-        a.tier = typeof json.organization?.rate_limit_tier === 'string' ? json.organization.rate_limit_tier : null;
+        a.tier = tierFromProfile(json);
       } else a.failed = true;
       return a;
     });

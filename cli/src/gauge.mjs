@@ -6,6 +6,7 @@
 import https from 'node:https';
 import { createHash } from 'node:crypto';
 import { accountFingerprint } from './recorder.mjs';
+import { tierFromProfile } from './tiers.mjs';
 import { readClaudeToken, refreshViaClaude } from './keychain.mjs';
 
 const HOST = 'api.anthropic.com';
@@ -40,7 +41,7 @@ export function createSampler({ readToken = readClaudeToken, refresh = refreshVi
     const uuid = r.json?.account?.uuid;
     if (r.status !== 200 || typeof uuid !== 'string') return { status: r.status };
     st.profile = { hash: h, at: now(), account_fp: accountFingerprint(uuid),
-      tier: typeof r.json.organization?.rate_limit_tier === 'string' ? r.json.organization.rate_limit_tier : null };
+      tier: tierFromProfile(r.json) };
     return st.profile;
   }
 
