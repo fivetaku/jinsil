@@ -105,6 +105,13 @@ function auxPanel(a) {
 
 export async function home(req, env) {
   const [s, f, user] = await Promise.all([publicStats(env), feed(env, 20), currentUser(req, env)]);
+  // 구버전 PC가 있는 로그인 사용자에게만 한 줄 공지
+  let updateNotice = '';
+  if (user) {
+    const latest = await latestClient();
+    const { results: devs } = await env.DB.prepare('SELECT client_version FROM devices WHERE user_id = ? AND revoked_at IS NULL').bind(user.id).all();
+    if (latest && devs.some(d => verLt(d.client_version, latest))) updateNotice = `<p class="note" style="margin:0 0 12px"><b>업데이트 필요</b> 내 PC의 클진요가 구버전입니다 — 터미널에서 <code>npx jinsil@latest setup</code> 한 번 실행하면 이후 자동 업데이트됩니다.</p>`;
+  }
   const plans = ['pro', 'max5x', 'max20x'].map(k => s.plans[k]);
   const teamPlans = ['team_standard', 'team_premium'].map(k => s.plans[k]).filter(Boolean);
   const allPlans = [...plans, ...teamPlans];
@@ -128,8 +135,7 @@ export async function home(req, env) {
   return html(layout('클진요 — 클로드에게 진실을 요구합니다', `
 <section class="band"><div class="wrap"><h1>클로드에게 진실을 요구합니다</h1><p class="join">터미널에서 <code>npx jinsil setup</code> 한 번이면 끝. 이후 평소처럼 Claude Code(터미널·IDE·SDK)를 쓰면 됩니다 <a href="/methodology">어떻게 계산하나요?</a></p><p class="live">지금 <b>${s.measuring.users}명</b>이 PC ${s.measuring.devices}대에서 측정 중 · 한도 창(5시간·주간) 단위로 자동 집계</p></div></section>
 <main class="wrap" id="stats">
-  <p class="note" style="margin:0 0 12px"><b>공지</b> 0.2.6: 설치 때 계정 전용·혼용 여부를 묻고 자동 업데이트됩니다 — 기존 참여자는 <code>npx jinsil@latest setup</code> 한 번만 다시 실행해 주세요.</p>
-  <div class="caution"><b>측정 주의</b><ul>
+${updateNotice}  <div class="caution"><b>측정 주의</b><ul>
     <li>같은 계정으로 claude.ai 채팅·모바일·다른 PC를 함께 쓰면 게이지만 올라 값이 낮게 나옵니다 — 이런 창은 "외부 사용 의심"으로 통계에서 뺍니다.</li>
     <li>여러 계정을 요청마다 돌려 쓰는 계정 풀·라우터 경유 사용은 어느 계정의 사용인지 나눌 수 없어 집계에서 빠집니다.</li>
     <li>참여자가 로컬에서 관측해 제출한 값이며, 금액은 API 정가 환산 추정치입니다(실제 청구액 아님).</li></ul></div>
