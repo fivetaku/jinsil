@@ -71,6 +71,8 @@ export const verLt = (a, b) => { const x = String(a).split('.').map(Number), y =
 async function latestVersion() {
   try { const r = await fetch('https://registry.npmjs.org/jinsil/latest', { signal: AbortSignal.timeout(15000) }); return r.ok ? (await r.json()).version : null; } catch { return null; }
 }
+// 서비스(launchd·systemd)의 PATH에는 보통 node가 없다 → npx의 `#!/usr/bin/env node`가 실패(09-24 실측). 지금 node의 폴더를 앞에 붙인다.
+export const updateEnv = (env = process.env, execPath = process.execPath) => ({ ...env, PATH: `${path.dirname(execPath)}${path.delimiter}${env.PATH || ''}` });
 export async function maybeSelfUpdate(current, { latest = latestVersion, spawnFn } = {}) {
   if (loadConfig().auto_update === false) return null;
   const v = await latest();
@@ -79,7 +81,7 @@ export async function maybeSelfUpdate(current, { latest = latestVersion, spawnFn
   const npx = path.join(path.dirname(process.execPath), process.platform === 'win32' ? 'npx.cmd' : 'npx');
   const log = fs.openSync(path.join(dataDir(), '..', 'update.log'), 'a');
   const child = (spawnFn || spawn)(fs.existsSync(npx) ? npx : 'npx', ['-y', `jinsil@${v}`, 'setup', '--yes', '--no-login', '--no-path'],
-    { detached: true, stdio: ['ignore', log, log], shell: process.platform === 'win32', env: process.env });
+    { detached: true, stdio: ['ignore', log, log], shell: process.platform === 'win32', env: updateEnv() });
   child.unref?.();
   return v;
 }

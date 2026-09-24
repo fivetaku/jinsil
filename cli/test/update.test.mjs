@@ -7,7 +7,7 @@ import path from 'node:path';
 
 const home = fs.mkdtempSync(path.join(os.tmpdir(), 'jinsil-up-'));
 process.env.JINSIL_HOME = home;
-const { verLt, maybeSelfUpdate } = await import('../src/collector.mjs');
+const { verLt, maybeSelfUpdate, updateEnv } = await import('../src/collector.mjs');
 const { saveConfig } = await import('../src/config.mjs');
 
 test('버전 비교와 자동 업데이트: 새 버전일 때만 npx jinsil@<v> setup --yes, 끄면 안 함', async () => {
@@ -22,4 +22,9 @@ test('버전 비교와 자동 업데이트: 새 버전일 때만 npx jinsil@<v> 
   saveConfig({ auto_update: false });
   assert.equal(await maybeSelfUpdate('0.2.6', { latest: async () => '0.2.8', spawnFn }), null);
   assert.equal(calls.length, 1);
+});
+
+test('자동 업데이트는 서비스 PATH에 node 폴더를 붙여 실행한다', () => {
+  const e = updateEnv({ PATH: '/usr/bin:/bin' }, '/opt/homebrew/Cellar/node/26/bin/node');
+  assert.ok(e.PATH.startsWith('/opt/homebrew/Cellar/node/26/bin' + path.delimiter));
 });
