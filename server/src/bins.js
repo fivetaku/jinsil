@@ -131,7 +131,7 @@ export async function submit(req, env) {
     await env.DB.prepare('INSERT INTO flags (account_fp, rule, detail, created_at) VALUES (?, ?, ?, ?)').bind(p.account_fp, 'account_bound_to_other_user', device.user_id, now).run();
     return json({ status: 'rejected', reason: 'account_bound_to_other_user' }, 409);
   }
-  const stmts = [env.DB.prepare('UPDATE devices SET last_seen = ?, collector = ? WHERE id = ?').bind(now, p.client.collector, device.id)];
+  const stmts = [env.DB.prepare('UPDATE devices SET last_seen = ?, collector = ?, client_version = ? WHERE id = ?').bind(now, p.client.collector, p.client.version, device.id)];
   if (!acct) stmts.push(env.DB.prepare('INSERT INTO claude_accounts (account_fp, user_id, tier_latest, public_tag, first_seen) VALUES (?, ?, ?, ?, ?)')
     .bind(p.account_fp, device.user_id, p.tier, p.account_fp.slice(-4), now));
   else if (p.tier) stmts.push(env.DB.prepare('UPDATE claude_accounts SET tier_latest = ? WHERE account_fp = ?').bind(p.tier, p.account_fp));
