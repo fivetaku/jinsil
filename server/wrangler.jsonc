@@ -13,8 +13,8 @@
     "GOOGLE_CLIENT_ID": "539249206986-52tn1fabd4hkb2dvd7pbe68q3d9rsiop.apps.googleusercontent.com",
     "GOOGLE_AUTH_URL": "https://accounts.google.com/o/oauth2/v2/auth",
     "GOOGLE_TOKEN_URL": "https://oauth2.googleapis.com/token",
-    "MIN_ACCOUNTS": "5",
-    "PROBATION_HOURS": "24",
+    "MIN_ACCOUNTS": "3",
+    "PROBATION_HOURS": "0",
     "DEV_IDP": "0"
   },
   // GOOGLE_CLIENT_SECRET 은 wrangler secret. 로컬은 .dev.vars(모의 IdP).

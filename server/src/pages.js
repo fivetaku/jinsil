@@ -84,7 +84,7 @@ function planCard(p, sticks, bestPlan) {
   const s = (sticks[p.plan] || []).map(t => `<span class="st ${t.kind}">${esc(t.text)}</span>`).join('');
   const body = p.shown
     ? `<div class="big">${x(p.value_multiple)}</div><div class="sub">30일 환산 ≈ ${usd(p.monthly_value)}</div>
-       <div class="meta">주간 100% 중앙값 ${usd(p.median_usd_per_100pct)} (측정 범위 ${usd(p.range_lo)}~${usd(p.range_hi)}) · ${p.n}계정 · ${stageTxt(p.stages)}</div>
+       <div class="meta">주간 100% 중앙값 ${usd(p.median_usd_per_100pct)} (측정 범위 ${usd(p.range_lo)}~${usd(p.range_hi)}) · ${p.n}계정${p.n < 5 ? ' (표본 적음)' : ''} · ${stageTxt(p.stages)}</div>
        <div class="meta"><a href="/v2/evidence/${esc(p.plan)}">증거 묶음(JSON) 내려받기</a></div>`
     : `<div class="big muted">구독료의 ?배</div><div class="meta">참여 ${p.participants}계정${p.participants > p.n ? ` (검증 중·데이터 부족 ${p.participants - p.n})` : ''} · 공개까지 ${Math.max(0, p.min_accounts - p.n)}계정 더</div>`;
   return `<div class="card ${bestPlan === p.plan ? 'best' : ''}"><div class="hd">${esc(p.label)}<span>월 ${usd(p.price)}</span></div>
@@ -152,7 +152,7 @@ ${updateNotice}  <div class="caution"><b>측정 주의</b><ul>
   <div class="tab">보조 지표 · 토큰 종류별 게이지 가중치</div><div class="panel">${auxPanel(s.aux)}
     <p class="note">요금제 값 계산에는 쓰지 않는 보조 지표입니다. 5시간 창마다 게이지 상승을 성분별 API 정가 비용으로 회귀해, 게이지가 각 토큰을 정가 비율보다 무겁게(1보다 큼) 또는 가볍게 세는지 추정합니다. 하루 한 번 갱신.</p></div>
   <div class="tab">참여 로그</div><div class="panel"><div class="feeds"><div><h3>주간 게이지</h3>${feedTable('7d')}</div><div><h3>5시간 게이지</h3>${feedTable('5h')}</div></div>
-    <p class="note">한도 창 단위로 갱신됩니다. 새 계정은 ${esc(env.PROBATION_HOURS ?? 24)}시간 검증 후 통계에 반영됩니다.</p></div>
+    <p class="note">한도 창 단위로 갱신됩니다.${Number(env.PROBATION_HOURS ?? 24) > 0 ? ` 새 계정은 ${esc(env.PROBATION_HOURS)}시간 검증 후 통계에 반영됩니다.` : ''}</p></div>
 </main>`, { user }), 200, { 'cache-control': 'no-store' });
 }
 
@@ -163,7 +163,7 @@ export async function methodology(req, env) {
 <h2>한도 창 계산</h2><p>게이지가 리셋되는 한 주기(5시간 창·주간 창)마다, 첫 게이지 관측을 기준점으로 게이지 최댓값에 처음 닿은 관측까지 쓴 토큰을 API 정가로 환산해 합산합니다(<b>C</b>). 게이지 상승을 <b>Δ</b>라 하면 1%당 값 = C ÷ Δ입니다. 게이지가 1% 단위라 경계 오차를 범위로 함께 냅니다: [C⁻ ÷ (Δ+1), C⁺ ÷ (Δ−1)] (C⁻는 완전히 안쪽 5분 구간만, C⁺는 경계 구간 포함).</p>
 <h2>단계</h2><p>계정의 주간 창 누적 상승 기준 +5%p에서 <b>잠정</b>으로 등록하고, 창이 커지면 +8%p <b>보통</b>, +11%p <b>정밀</b>로 자동 갱신합니다. 09-23 팀 계정 로그 모의에서 +5%p는 최종값과 중앙 ±23%, +8%p는 모두 ±20% 안, +11%p는 86%가 ±10% 안이었습니다(주간 창 7개로 표본이 작아 운영 데이터로 재검증 예정).</p>
 <h2>주간 100%와 가성비</h2><p>계정별 (Σ비용 ÷ Σ게이지 상승) × 100이 <b>주간 100% 환산액</b>입니다. 요금제별 계정 값의 <b>중앙값</b>(계정당 한 표)에 × 30/7(30일 환산) = 30일 가치, ÷ 월 구독료 = <b>가성비 배수</b>입니다. 매주 100%를 다 썼을 때의 이론적 상한이며 실제 청구액이 아닙니다.</p>
-<h2>통계에서 빼는 것</h2><p>값의 크기로는 빼지 않고, 미리 정한 원인만 뺍니다: 로컬 사용 없이 게이지가 오른 창(외부 사용 의심), 창 도중 요금제 변경, fast 모드·서버 도구 등 표준 요금이 아닌 토큰, 캐시 보관 시간 미확인, 두 PC가 똑같은 기록을 낸 창(중복 수집 의심), 게이지 상승 5%p 미만. 계정 사이에서는 요금제 안 분포의 사분위범위 3배 밖 값(측정 오류 방어)과 신규 계정 첫 ${esc(env.PROBATION_HOURS ?? 24)}시간을 뺍니다. 공개는 요금제별 ${esc(env.MIN_ACCOUNTS ?? 5)}계정 이상일 때만, 5시간 지표는 따로 표본 수를 셉니다.</p>
+<h2>통계에서 빼는 것</h2><p>값의 크기로는 빼지 않고, 미리 정한 원인만 뺍니다: 로컬 사용 없이 게이지가 오른 창(외부 사용 의심), 창 도중 요금제 변경, fast 모드·서버 도구 등 표준 요금이 아닌 토큰, 캐시 보관 시간 미확인, 두 PC가 똑같은 기록을 낸 창(중복 수집 의심), 게이지 상승 5%p 미만. 계정 사이에서는 요금제 안 분포의 사분위범위 3배 밖 값(측정 오류 방어)${Number(env.PROBATION_HOURS ?? 24) > 0 ? `과 신규 계정 첫 ${esc(env.PROBATION_HOURS)}시간` : ''}을 뺍니다. 공개는 요금제별 ${esc(env.MIN_ACCOUNTS ?? 5)}계정 이상일 때만(5계정 미만은 '표본 적음' 표시), 5시간 지표는 따로 표본 수를 셉니다.</p>
 <h2>게이지 가중치는 정가 비율과 다르다</h2><p>09-23 실측에서 같은 계정의 5시간 창 1%당 값이 창마다 ±50~80% 흔들렸고, 캐시 읽기 비중이 높을수록 1%당 값이 올라가고(상관 +0.57) Sonnet 비중이 높을수록 내려갔습니다(−0.47). 게이지가 토큰 종류를 API 정가와 다른 비율로 센다는 뜻이라, 요금제 비교에는 참여자들의 사용 구성이 섞입니다.</p>
 <h2>보조 지표: 토큰 종류별 가중치와 반영 지연</h2><p>5시간 창마다 Δ게이지 ≈ w<sub>입력</sub>·C<sub>입력</sub> + w<sub>출력</sub>·C<sub>출력</sub> + w<sub>캐시 읽기</sub>·C<sub>캐시 읽기</sub> + w<sub>캐시 쓰기</sub>·C<sub>캐시 쓰기</sub>(C는 성분별 API 정가 비용)로 놓고 절편 없는 최소제곱으로 w를 구합니다. 공개값은 전체 평균(ΣΔ÷ΣC) 대비 상대 가중치로, 1보다 크면 게이지가 그 성분을 정가 비율보다 무겁게 센다는 뜻입니다. 5시간 창 30개·계정 5개 미만이면 공개하지 않습니다. 반영 지연은 창마다 0~30분(5분 간격) 지연을 시험해 누적 비용이 게이지 곡선에 가장 잘 맞는 값을 고르고, 그 중앙값을 냅니다. 둘 다 요금제 값 계산에는 쓰지 않습니다.</p>
 <h2>계정 풀·라우터 사용</h2><p>대화 파일에는 어느 계정으로 나갔는지가 남지 않습니다. 한 번에 한 계정을 쓰는 경우(로그인 전환 포함)는 5분마다 조회하는 게이지의 계정으로 시간순 귀속하지만, 요청마다 계정을 바꾸는 계정 풀이나 라우터를 거친 사용은 계정을 가를 수 없어 집계하지 않습니다.</p>
