@@ -32,7 +32,7 @@ export async function accountStats(env, now = Date.now()) {
   const probationMs = Number(env.PROBATION_HOURS ?? 24) * 3600000;
   const prices = await planPrices(env);
   const [{ results: accounts }, { results: sums }, { results: flagged }] = await Promise.all([
-    env.DB.prepare('SELECT account_fp, user_id, tier_latest, public_tag, first_seen FROM claude_accounts').all(),
+    env.DB.prepare('SELECT account_fp, user_id, tier_latest, public_tag, first_seen, usage_scope FROM claude_accounts').all(),
     env.DB.prepare(`SELECT account_fp, gauge, plan, COUNT(*) AS n, SUM(delta) AS d, SUM(cost) AS c, SUM(cost_lo) AS clo, SUM(cost_hi) AS chi,
       SUM(CASE WHEN state = 'final' THEN 1 ELSE 0 END) AS finals FROM windows
       WHERE exclude_reason IS NULL AND stage IS NOT NULL AND cost IS NOT NULL GROUP BY account_fp, gauge, plan`).all(),
@@ -61,6 +61,7 @@ export async function accountStats(env, now = Date.now()) {
     let ineligible = null;
     if (!a.plan || !price) ineligible = 'plan_unknown';
     else if (!w || !w.stage) ineligible = 'insufficient_weekly_data';
+    else if (a.usage_scope === 'shared') ineligible = 'shared_usage'; // 참여자 신고: 웹·앱·다른 PC·봇과 같이 씀 → 이 PC 기록만으로는 비용이 덜 잡힌다
     else if (flaggedSet.has(a.account_fp)) ineligible = 'flagged';
     else if (now - a.first_seen < probationMs) ineligible = 'probation';
     return { account_fp: a.account_fp, user_id: a.user_id, tag: a.public_tag, plan: a.plan, tier: a.tier_latest, price: price ?? null,
@@ -69,7 +70,7 @@ export async function accountStats(env, now = Date.now()) {
       five_hour_usd_per_100pct: f?.stage ? f.usd_per_100pct : null, five_hour_pct: f?.pct ?? 0,
       monthly_value: monthly, value_multiple: monthly !== null && price ? monthly / price : null,
       effective_usd_per_api_usd: monthly ? price / monthly : null, probation: now - a.first_seen < probationMs,
-      eligible: !ineligible, ineligible };
+      usage_scope: a.usage_scope || null, eligible: !ineligible, ineligible };
   });
   // 요금제별 이상치(IQR 3배) 제외(측정 오류 방어) 후 순위
   for (const plan of PLANS) {
@@ -154,18 +155,35 @@ export async function publicStats(env) {
     note: '참여자가 로컬에서 관측해 제출한 값 · 매주 100%를 다 썼을 때의 이론적 상한 · API 정가 환산' };
 }
 
+// 혼용 의심(표시만, 제외 아님): 같은 게이지·요금제 적격 계정 값 중앙값의 절반 미만인 창. 이 PC 밖 사용이 섞이면 1%당 값이 낮게 나온다.
+export function planGaugeMedians(list) {
+  const out = {};
+  for (const plan of PLANS) {
+    const el = list.filter(a => a.plan === plan && a.eligible);
+    const w = el.map(a => a.usd_per_100pct).filter(x => x !== null), f = el.map(a => a.five_hour_usd_per_100pct).filter(x => x !== null);
+    out[plan] = { '7d': w.length >= 2 ? median(w) : null, '5h': f.length >= 2 ? median(f) : null };
+  }
+  return out;
+}
+export const suspectShared = (w, meds) => {
+  const m = meds[w.plan]?.[w.gauge];
+  return !w.exclude_reason && m && w.usd_per_pct !== null && w.usd_per_pct * 100 < m / 2;
+};
+
 const STAGE_KO = { provisional: '잠정', normal: '보통', precise: '정밀' };
 export const EXCLUDE_KO = { external_usage_suspected: '외부 사용 의심', tier_changed: '요금제 변경', unpriced_tokens: '비표준·미가격 토큰', below_min_delta: '게이지 상승 5%p 미만',
   duplicate_collection_suspected: '중복 수집 의심', attribution_unverified: '계정 미확정' };
 
 export async function feed(env, limit = 30) {
-  const { results } = await env.DB.prepare(`SELECT w.updated_at, w.gauge, w.g_base, w.g_end, w.stage, w.state, w.exclude_reason, w.plan, a.public_tag
+  const meds = planGaugeMedians(await accountStats(env));
+  const { results } = await env.DB.prepare(`SELECT w.updated_at, w.gauge, w.g_base, w.g_end, w.stage, w.state, w.exclude_reason, w.plan, w.usd_per_pct, a.public_tag
     FROM windows w JOIN claude_accounts a ON a.account_fp = w.account_fp ORDER BY w.updated_at DESC LIMIT ?`).bind(limit * 3).all();
   // 참여 로그는 금액 없이 게이지 변화·상태만 싣는다 → 공개 기준 미달 요금제도 보여 준다(09-24 오너 결정). 금액·배수는 여전히 공개 기준 뒤.
   return results.slice(0, limit).map(r => ({
     at: new Date(Math.floor(r.updated_at / 60000) * 60000).toISOString(), tag: r.public_tag, plan: r.plan, gauge: r.gauge,
     range: `${r.g_base}%→${r.g_end}%`, stage: r.stage, state: r.state, exclude_reason: r.exclude_reason,
-    display: r.exclude_reason ? `제외 · ${EXCLUDE_KO[r.exclude_reason] || r.exclude_reason}` : `${STAGE_KO[r.stage]} · ${r.state === 'final' ? '확정' : '진행 중'}`,
+    suspect_shared: !!suspectShared(r, meds),
+    display: r.exclude_reason ? `제외 · ${EXCLUDE_KO[r.exclude_reason] || r.exclude_reason}` : `${STAGE_KO[r.stage]} · ${r.state === 'final' ? '확정' : '진행 중'}${suspectShared(r, meds) ? ' · 혼용 의심' : ''}`,
   }));
 }
 
@@ -185,10 +203,12 @@ export async function me(env, userId) {
       weekly_pct: a.weekly_pct, min_weekly_pct: a.min_weekly_pct, windows: a.windows, usd_per_100pct: a.usd_per_100pct, range_lo: a.range_lo, range_hi: a.range_hi,
       five_hour_usd_per_100pct: a.five_hour_usd_per_100pct, monthly_value: a.monthly_value, value_multiple: a.value_multiple,
       effective_usd_per_api_usd: a.effective_usd_per_api_usd, rank: a.rank ?? null, n_in_plan: a.n_in_plan ?? plans[a.plan]?.n ?? 0,
-      top_pct: a.top_pct ?? null, vs_plan_median: planMed && a.usd_per_100pct ? a.usd_per_100pct / planMed - 1 : null, latest };
+      usage_scope: a.usage_scope, top_pct: a.top_pct ?? null, vs_plan_median: planMed && a.usd_per_100pct ? a.usd_per_100pct / planMed - 1 : null, latest };
   });
-  const devices = (await env.DB.prepare('SELECT id, name, os, client_version, collector, created_at, last_seen, revoked_at FROM devices WHERE user_id = ? ORDER BY created_at DESC').bind(userId).all()).results;
-  return { accounts, windows: windows.map(({ account_fp, ...w }) => w), devices, plans };
+  const devices = (await env.DB.prepare('SELECT id, name, os, client_version, collector, excluded_json, created_at, last_seen, revoked_at FROM devices WHERE user_id = ? ORDER BY created_at DESC').bind(userId).all()).results
+    .map(({ excluded_json, ...d }) => ({ ...d, excluded: excluded_json ? JSON.parse(excluded_json) : null }));
+  const meds = planGaugeMedians(list);
+  return { accounts, windows: windows.map(({ account_fp, ...w }) => ({ ...w, suspect_shared: !!suspectShared(w, meds) })), devices, plans };
 }
 
 // M5 보조 지표 계산(일 1회 cron). 5시간 창만 쓴다(주간과 %p 척도가 달라 섞지 않는다). 제외·미확정 비용 창은 뺀다.

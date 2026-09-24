@@ -128,6 +128,7 @@ export async function home(req, env) {
   return html(layout('클진요 — 클로드에게 진실을 요구합니다', `
 <section class="band"><div class="wrap"><h1>클로드에게 진실을 요구합니다</h1><p class="join">터미널에서 <code>npx jinsil setup</code> 한 번이면 끝. 이후 평소처럼 Claude Code(터미널·IDE·SDK)를 쓰면 됩니다 <a href="/methodology">어떻게 계산하나요?</a></p><p class="live">지금 <b>${s.measuring.users}명</b>이 PC ${s.measuring.devices}대에서 측정 중 · 한도 창(5시간·주간) 단위로 자동 집계</p></div></section>
 <main class="wrap" id="stats">
+  <p class="note" style="margin:0 0 12px"><b>공지</b> 0.2.6: 설치 때 계정 전용·혼용 여부를 묻고 자동 업데이트됩니다 — 기존 참여자는 <code>npx jinsil@latest setup</code> 한 번만 다시 실행해 주세요.</p>
   <div class="caution"><b>측정 주의</b><ul>
     <li>같은 계정으로 claude.ai 채팅·모바일·다른 PC를 함께 쓰면 게이지만 올라 값이 낮게 나옵니다 — 이런 창은 "외부 사용 의심"으로 통계에서 뺍니다.</li>
     <li>여러 계정을 요청마다 돌려 쓰는 계정 풀·라우터 경유 사용은 어느 계정의 사용인지 나눌 수 없어 집계에서 빠집니다.</li>
@@ -186,11 +187,21 @@ function sparkline(points) {
   <p class="note">주간 창 기준 · 최저 ${usd(min)} · 최고 ${usd(max)} / 100% (${points.length}창)</p>`;
 }
 
-const winState = w => w.exclude_reason ? `제외 · ${EXCLUDE_KO[w.exclude_reason] || w.exclude_reason}` : `${STAGE_KO[w.stage]} · ${w.state === 'final' ? '확정' : '진행 중'}`;
+const EXCL_MSG = { nonstandard_model: '라우터·비표준 모델', no_direct_request_id: '직결 아님', synthetic_or_error: '오류 응답', before_connect: '연결 이전', not_oauth_account: '구독 계정 아님', bad_json: '손상 줄', bad_timestamp: '시각 없음' };
+const winState = w => w.exclude_reason ? `제외 · ${EXCLUDE_KO[w.exclude_reason] || w.exclude_reason}` : `${STAGE_KO[w.stage]} · ${w.state === 'final' ? '확정' : '진행 중'}${w.suspect_shared ? ' · 혼용 의심' : ''}`;
+// 버전 비교(0.2.10 > 0.2.9)
+const verLt = (a, b) => { const x = String(a || '0').split('.').map(Number), y = String(b || '0').split('.').map(Number); for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) < (y[i] || 0); return false; };
+// npm 최신 버전(10분 캐시). 실패하면 null → 공지 생략.
+export async function latestClient() {
+  try { const r = await fetch('https://registry.npmjs.org/jinsil/latest', { cf: { cacheTtl: 600, cacheEverything: true } }); return r.ok ? (await r.json()).version : null; } catch { return null; }
+}
 
 export async function me(req, env, user, data) {
+  const latest = await latestClient();
+  const outdated = latest ? data.devices.filter(d => !d.revoked_at && verLt(d.client_version, latest)) : [];
+  const notice = outdated.length ? `<div class="panel notice"><b>업데이트가 필요합니다</b> — ${outdated.map(d => `${esc(d.name)}(${esc(d.client_version || '?')})`).join(', ')}. 터미널에서 <code>npx jinsil@latest setup</code>을 한 번 실행하면 최신 ${esc(latest)}로 바뀌고, 이후에는 자동으로 업데이트됩니다. 업데이트하면 그 PC에 남은 기록을 다시 보내 새 기준으로 다시 계산합니다.</div>` : '';
   const accounts = data.accounts.length ? data.accounts.map(a => {
-    const why = { insufficient_weekly_data: `주간 게이지 누적 +${a.min_weekly_pct}%p부터 등록됩니다(현재 +${a.weekly_pct}%p)`, probation: '신규 계정 검증 기간', flagged: '검토 중', outlier: '같은 요금제 분포에서 크게 벗어나 검토 중', plan_unknown: '요금제 확인 불가(등급 문자열 미확인)' }[a.ineligible] || '';
+    const why = { insufficient_weekly_data: `주간 게이지 누적 +${a.min_weekly_pct}%p부터 등록됩니다(현재 +${a.weekly_pct}%p)`, probation: '신규 계정 검증 기간', flagged: '검토 중', shared_usage: '웹·앱·다른 PC와 같이 쓰는 계정이라 통계에서 제외(참고용)', outlier: '같은 요금제 분포에서 크게 벗어나 검토 중', plan_unknown: '요금제 확인 불가(등급 문자열 미확인)' }[a.ineligible] || '';
     const latest = a.latest.map(l => `${gaugeLabel(l.gauge)} ${l.g_end}%`).join(' · ');
     return `<div class="tab">Claude 계정 #${esc(a.tag)} · ${esc(PLAN_LABEL[a.plan] || '요금제 미확인')}${a.stage ? ` · ${STAGE_KO[a.stage]}` : ''}</div><div class="panel">
     <div class="kpis"><div class="kpi"><b>${a.rank ? `${a.rank}위` : '—'}</b><span>${a.rank ? `${esc(PLAN_LABEL[a.plan])} ${a.n_in_plan}명 중 · 상위 ${a.top_pct}%` : esc(why)}</span></div>
@@ -206,10 +217,10 @@ export async function me(req, env, user, data) {
     return `<table><tr><th>창 리셋(KST)</th><th>계정</th><th>게이지</th><th>1%당(범위)</th><th>상태</th></tr>${rs.length ? rs.map(w => `<tr><td>${kst(w.resets_at)}</td><td>#${esc(w.public_tag)}</td><td>${w.g_base}%→${w.g_end}%</td>
     <td class="num">${w.usd_per_pct === null ? '—' : `${usd(w.usd_per_pct, 2)} (${usd(w.usd_per_pct_lo, 2)}~${usd(w.usd_per_pct_hi, 2)})`}</td><td>${esc(winState(w))}</td></tr>`).join('') : '<tr><td colspan="5" class="note">없음</td></tr>'}</table>`;
   };
-  const devs = data.devices.map(d => `<tr><td>${esc(d.name)}</td><td>${esc(d.os)}${d.collector ? ` · ${{ proxy: '프록시', teamclaude: '계정 풀 로그', transcript: '대화 파일' }[d.collector] || d.collector}` : ''}</td><td>${d.last_seen ? kst(new Date(d.last_seen).toISOString()) : '—'}</td>
+  const devs = data.devices.map(d => `<tr><td>${esc(d.name)}</td><td>${esc(d.os)}${d.collector ? ` · ${{ proxy: '프록시', teamclaude: '계정 풀 로그', transcript: '대화 파일' }[d.collector] || d.collector}` : ''} · ${esc(d.client_version || '?')}${d.excluded && Object.keys(d.excluded).length ? `<br><span class="note">집계 제외 ${Object.entries(d.excluded).map(([k, v]) => `${esc(EXCL_MSG[k] || k)} ${v}`).join(' · ')}</span>` : ''}</td><td>${d.last_seen ? kst(new Date(d.last_seen).toISOString()) : '—'}</td>
     <td>${d.revoked_at ? '해제됨' : `<form method="post" action="/me/devices/revoke"><input type="hidden" name="csrf" value="${esc(user.csrf)}"><input type="hidden" name="device_id" value="${esc(d.id)}"><button class="btn ghost">연결 해제</button></form>`}</td></tr>`).join('');
   return html(layout('내 대시보드 — 클진요', `<main class="wrap"><div class="lead"><h2>내 대시보드</h2><p>얼마나 비싸게 쓰고 있는지 · 같은 요금제에서 몇 위인지</p></div>
-${accounts}
+${notice}${accounts}
 <div class="tab">주간 100% 환산 추이</div><div class="panel">${sparkline(series)}</div>
 <div class="tab">한도 창</div><div class="panel"><div class="feeds"><div><h3>주간</h3>${winTable('7d')}</div><div><h3>5시간</h3>${winTable('5h')}</div></div>
 <p class="note">창이 커질수록 범위가 좁아지고 단계가 올라갑니다(+5%p 잠정 → +8%p 보통 → +11%p 정밀).</p>

@@ -65,7 +65,26 @@ export async function collectPoolOnce({ sampler, since, now = Date.now() } = {})
   return { changed, samples: samples.length, messages: Object.keys(st.messages).length, excluded: st.excluded };
 }
 
-export async function startCollector({ onTick } = {}) {
+// 자동 업데이트: 6시간마다 npm 최신 버전 확인, 더 새로우면 `npx jinsil@<v> setup --yes`로 스스로 교체한다(서비스 재등록·기록 재전송 포함).
+// 끄기: setup --no-auto-update (config.auto_update=false). 목적지는 registry.npmjs.org 고정.
+export const verLt = (a, b) => { const x = String(a).split('.').map(Number), y = String(b).split('.').map(Number); for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) < (y[i] || 0); return false; };
+async function latestVersion() {
+  try { const r = await fetch('https://registry.npmjs.org/jinsil/latest', { signal: AbortSignal.timeout(15000) }); return r.ok ? (await r.json()).version : null; } catch { return null; }
+}
+export async function maybeSelfUpdate(current, { latest = latestVersion, spawnFn } = {}) {
+  if (loadConfig().auto_update === false) return null;
+  const v = await latest();
+  if (!v || !/^\d+\.\d+\.\d+$/.test(v) || !verLt(current, v)) return null;
+  const { spawn } = await import('node:child_process');
+  const npx = path.join(path.dirname(process.execPath), process.platform === 'win32' ? 'npx.cmd' : 'npx');
+  const log = fs.openSync(path.join(dataDir(), '..', 'update.log'), 'a');
+  const child = (spawnFn || spawn)(fs.existsSync(npx) ? npx : 'npx', ['-y', `jinsil@${v}`, 'setup', '--yes', '--no-login', '--no-path'],
+    { detached: true, stdio: ['ignore', log, log], shell: process.platform === 'win32', env: process.env });
+  child.unref?.();
+  return v;
+}
+
+export async function startCollector({ onTick, version } = {}) {
   fs.mkdirSync(dataDir(), { recursive: true, mode: 0o700 });
   const lockFd = acquireLock(path.join(dataDir(), 'collector.lock'));
   process.on('exit', () => { try { fs.closeSync(lockFd); fs.unlinkSync(path.join(dataDir(), 'collector.lock')); } catch {} });
@@ -89,6 +108,7 @@ export async function startCollector({ onTick } = {}) {
   };
   await loop();
   setInterval(loop, TICK_MS);
+  if (version) { const check = () => maybeSelfUpdate(version).catch(() => null); setTimeout(check, 5 * 60000); setInterval(check, 6 * 3600000); }
   return new Promise(() => {});
 }
 

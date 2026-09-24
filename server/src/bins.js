@@ -26,7 +26,10 @@ export function validate(p, now = Date.now()) {
   if (!Array.isArray(p.bins) || p.bins.length > MAX_BINS) return 'invalid_bins';
   if (!Array.isArray(p.samples) || p.samples.length > MAX_SAMPLES) return 'invalid_samples';
   if (!p.bins.length && !p.samples.length) return 'empty';
-  if (!onlyKeys(p.client, ['version', 'collector']) || typeof p.client.version !== 'string' || p.client.version.length > 16 || !['transcript', 'proxy', 'teamclaude'].includes(p.client.collector)) return 'invalid_client';
+  if (!onlyKeys(p.client, ['version', 'collector', 'usage_scope', 'excluded']) || typeof p.client.version !== 'string' || p.client.version.length > 16 || !['transcript', 'proxy', 'teamclaude'].includes(p.client.collector)) return 'invalid_client';
+  if (p.client.usage_scope !== undefined && p.client.usage_scope !== null && !['exclusive', 'shared'].includes(p.client.usage_scope)) return 'invalid_client';
+  if (p.client.excluded !== undefined && (!p.client.excluded || typeof p.client.excluded !== 'object' || Array.isArray(p.client.excluded) || Object.keys(p.client.excluded).length > 12
+    || !Object.entries(p.client.excluded).every(([k, v]) => /^[a-z_]{1,32}$/.test(k) && isInt(v, 0, 1e9)))) return 'invalid_client';
   const lo = now - 40 * 86400000, hi = now + 10 * 60000;
   for (const b of p.bins) {
     if (!onlyKeys(b, ['bin_start', 'model', ...TOKEN_KEYS, 'messages', 'sidechain_messages', 'special', 'revision'])) return 'unknown_bin_field';
@@ -131,10 +134,12 @@ export async function submit(req, env) {
     await env.DB.prepare('INSERT INTO flags (account_fp, rule, detail, created_at) VALUES (?, ?, ?, ?)').bind(p.account_fp, 'account_bound_to_other_user', device.user_id, now).run();
     return json({ status: 'rejected', reason: 'account_bound_to_other_user' }, 409);
   }
-  const stmts = [env.DB.prepare('UPDATE devices SET last_seen = ?, collector = ?, client_version = ? WHERE id = ?').bind(now, p.client.collector, p.client.version, device.id)];
+  const stmts = [env.DB.prepare('UPDATE devices SET last_seen = ?, collector = ?, client_version = ?, excluded_json = COALESCE(?, excluded_json) WHERE id = ?')
+    .bind(now, p.client.collector, p.client.version, p.client.excluded ? JSON.stringify(p.client.excluded) : null, device.id)];
   if (!acct) stmts.push(env.DB.prepare('INSERT INTO claude_accounts (account_fp, user_id, tier_latest, public_tag, first_seen) VALUES (?, ?, ?, ?, ?)')
     .bind(p.account_fp, device.user_id, p.tier, p.account_fp.slice(-4), now));
   else if (p.tier) stmts.push(env.DB.prepare('UPDATE claude_accounts SET tier_latest = ? WHERE account_fp = ?').bind(p.tier, p.account_fp));
+  if (p.client.usage_scope) stmts.push(env.DB.prepare('UPDATE claude_accounts SET usage_scope = ? WHERE account_fp = ?').bind(p.client.usage_scope, p.account_fp));
   for (const b of p.bins) stmts.push(env.DB.prepare(`INSERT INTO usage_bins (account_fp, device_id, bin_start, model, input, output, cache_read, cache_write_5m,
       cache_write_1h, cache_write_unknown, messages, sidechain_messages, special_json, revision, collector, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(account_fp, device_id, bin_start, model) DO UPDATE SET input=excluded.input, output=excluded.output, cache_read=excluded.cache_read,

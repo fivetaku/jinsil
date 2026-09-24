@@ -12,7 +12,7 @@ import { readSamples, sampleRows, stateFile, poolStateFile } from './collector.m
 import { COLUMNS, LEDGER_FILE } from './recorder.mjs';
 import { PRICES, TOKEN_KEYS } from './prices.mjs';
 
-export const CLIENT_VERSION = '0.2.5';
+export const CLIENT_VERSION = '0.2.6';
 export const CONSENT_VERSION = 2;
 const MAX_BINS = 200, MAX_SAMPLES = 400;
 const sentFile = () => path.join(dataDir(), 'v2_submitted.json');
@@ -52,8 +52,16 @@ const binOut = b => ({ bin_start: b.bin_start, model: b.model, ...Object.fromEnt
   messages: b.messages, sidechain_messages: b.sidechain_messages, special: b.special, revision: b.hash });
 
 // 계정별 보낼 payload 목록
+// 집계에서 뺀 메시지 수(사유별 숫자만) — 참여자별 누락 규모를 서버에서 보기 위함
+export function excludedCounts(cfg = loadConfig()) {
+  const st = readJson(cfg.collector === 'teamclaude' ? poolStateFile() : stateFile(), {});
+  const e = Object.fromEntries(Object.entries(st.excluded || {}).filter(([k, v]) => /^[a-z_]{1,32}$/.test(k) && Number.isInteger(v) && v >= 0).slice(0, 12));
+  return Object.keys(e).length ? e : null;
+}
+
 export function pendingPayloads({ cfg = loadConfig() } = {}) {
   const { messages, samples } = inputs(cfg);
+  const excluded = cfg.collector === 'proxy' ? null : excludedCounts(cfg);
   const bins = buildBins(messages, samples);
   const sent = readJson(sentFile(), { bins: {}, samples: {} });
   const unverified = bins.filter(b => !b.account_fp).length;
@@ -74,7 +82,8 @@ export function pendingPayloads({ cfg = loadConfig() } = {}) {
       if (!bs.length && !ss.length) continue;
       out.push({ account_fp: fp, tier, bins: bs.map(binOut),
         samples: ss.map(s => ({ observed_at: s.observed_at, gauge: s.gauge, utilization: s.utilization, resets_at: s.resets_at, source: s.source, tier: s.tier })),
-        client: { version: CLIENT_VERSION, collector: ['proxy', 'teamclaude'].includes(cfg.collector) ? cfg.collector : 'transcript' }, _bins: bs });
+        client: { version: CLIENT_VERSION, collector: ['proxy', 'teamclaude'].includes(cfg.collector) ? cfg.collector : 'transcript',
+          ...(cfg.usage_scope ? { usage_scope: cfg.usage_scope } : {}), ...(excluded ? { excluded } : {}) }, _bins: bs });
     }
   }
   return { payloads: out, unverified };

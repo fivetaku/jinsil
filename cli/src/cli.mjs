@@ -112,6 +112,7 @@ export const CONSENT_TEXT = `── 클진요 0.2 수집 동의 ──
   · 5분 단위 시각이 서버에 저장됩니다(활동 시간대가 드러날 수 있음). 공개 증거 묶음은 창 기준 상대시간만 씁니다.
 보내지 않는 것
   · 프롬프트·응답 본문, 파일 경로, 요청 ID, 이메일, 인증값. (PC 이름(호스트명)은 기기 연결 때 한 번 보내며 본인 /me에서만 보입니다.)
+자동 업데이트: 6시간마다 npm 최신 버전을 확인해 스스로 업데이트합니다(끄기: jinsil setup --no-auto-update).
 끄기: jinsil submit --auto off · 지우기: jinsil uninstall --purge + 웹 /me에서 데이터 삭제`;
 
 async function setup(flags) {
@@ -143,6 +144,18 @@ async function setup(flags) {
     if (ok) saveConfig({ consent_version: CONSENT_VERSION, consent_v2_at: new Date().toISOString(), auto_submit: true });
     else { saveConfig({ auto_submit: false }); console.log('동의하지 않아 자동 제출을 끕니다(로컬 기록만). 나중에 `jinsil setup`으로 다시 동의할 수 있습니다.'); }
   } else if (flags['no-auto-submit']) saveConfig({ auto_submit: false });
+  // 계정 사용 범위(자기 신고): 웹·앱·다른 PC·봇에서 같은 계정을 쓰면 이 PC 기록만으로는 비용이 덜 잡힌다 → 통계에서 참고로만.
+  if (flags.exclusive || flags.shared) saveConfig({ usage_scope: flags.shared ? 'shared' : 'exclusive' });
+  else if (!flags.yes && !loadConfig().usage_scope && process.stdin.isTTY) {
+    const shared = await ask('\n이 Claude 계정을 claude.ai 웹·앱, 다른 PC, 봇·스크립트에서도 같이 씁니까? [y/N] ');
+    saveConfig({ usage_scope: shared ? 'shared' : 'exclusive' });
+  }
+  if (flags['no-auto-update']) saveConfig({ auto_update: false });
+  // 버전이 바뀌면 이 PC에 남은 기록을 전부 다시 보낸다(서버 upsert, 새 기준으로 재계산).
+  if (loadConfig().last_version !== VERSION) {
+    try { fs.renameSync(path.join(dataDir(), 'v2_submitted.json'), path.join(dataDir(), `v2_submitted.${Date.now()}.bak`)); } catch {}
+    saveConfig({ last_version: VERSION });
+  }
   const entry = copyRuntime();
   const svc = service.install({ entry, port });
   console.log(`런타임: ${path.dirname(path.dirname(entry))}\n서비스: ${svc.kind} (${svc.path}) · 모드: ${{ proxy: '프록시(요청 경로 기록기)', teamclaude: '계정 풀 로그(teamclaude) + 계정별 게이지' }[collector] || '대화 파일 + 게이지(요청 경로 무개입)'}`);
@@ -267,6 +280,7 @@ async function claude(rest) {
 const HELP = `jinsil ${VERSION} — 클진요 (클로드에게 진실을 요구합니다)
   jinsil setup [--yes] [--proxy] [--server URL] [--no-login] [--no-path] [--no-auto-submit]
                                      수집기 설치·동의·서비스 등록·이 PC 연결 (--proxy: 다계정 풀용 로컬 기록기)
+  jinsil setup [--exclusive|--shared] [--no-auto-update]  계정 전용·혼용 신고, 자동 업데이트 끄기
   jinsil status | report [--evidence] 상태 / 로컬 한도 창 계산(증거 묶음 파일)
   jinsil submit [--dry-run] [--auto on|off]
   jinsil login | logout              웹 계정 연결 / 해제
@@ -290,7 +304,7 @@ export async function run(argv) {
         if (c.auto_submit && c.consent_version === CONSENT_VERSION && c.consent_v2_at && loadDevice()) await submit({ log: () => {} }).catch(() => {});
       };
       for (const s of ['SIGINT', 'SIGTERM']) process.on(s, () => process.exit(0));
-      return startCollector({ onTick });
+      return startCollector({ onTick, version: VERSION });
     }
     case 'setup': return setup(flags);
     case 'claude': return claude(rest);

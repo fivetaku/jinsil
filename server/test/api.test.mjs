@@ -174,3 +174,28 @@ test('일 1회 스냅샷이 보조 지표(가중치·지연)를 저장하고 /ap
   assert.equal(a.composition, null, '계정 5개 미만이면 구성 비공개');
   assert.equal(a.lag.status, 'waiting');
 });
+
+test('0.2.6: 혼용 신고 계정은 통계 제외, 제외 개수·버전 저장, 구버전 기기는 /me 업데이트 공지', async () => {
+  const ivy = await login(srv.base, 'ivy-shared');
+  const tok = (await linkDevice(srv.base, ivy)).token.device_token;
+  const p = windowPayload({ fp: fp('ab') });
+  p.client = { version: '0.1.0', collector: 'transcript', usage_scope: 'shared', excluded: { nonstandard_model: 12, before_connect: 3 } };
+  assert.equal((await postBins(srv.base, tok, p)).status, 201);
+  const me = await meOf(ivy);
+  const a = me.accounts.find(x => x.tag === 'abab');
+  assert.equal(a.ineligible, 'shared_usage'); assert.equal(a.usage_scope, 'shared');
+  const dev = me.devices.find(d => !d.revoked_at);
+  assert.deepEqual(dev.excluded, { nonstandard_model: 12, before_connect: 3 }); assert.equal(dev.client_version, '0.1.0');
+  const bad = windowPayload({ fp: fp('ac') }); bad.client = { version: '0.2.6', collector: 'transcript', usage_scope: 'maybe' };
+  assert.equal((await postBins(srv.base, tok, bad)).status, 422);
+  const bad2 = windowPayload({ fp: fp('ac') }); bad2.client = { version: '0.2.6', collector: 'transcript', excluded: { 'x y': 1 } };
+  assert.equal((await postBins(srv.base, tok, bad2)).status, 422);
+});
+
+test('혼용 의심: 같은 요금제 중앙값의 절반 미만인 창은 표시만(제외 아님)', async () => {
+  const jay = await login(srv.base, 'jay-low');
+  const tok = (await linkDevice(srv.base, jay)).token.device_token;
+  await postBins(srv.base, tok, windowPayload({ fp: fp('ad'), mtok: 0.2 }));
+  const w = (await meOf(jay)).windows.find(x => x.public_tag === 'adad' && x.gauge === '7d');
+  assert.equal(w.exclude_reason, null); assert.equal(w.suspect_shared, true);
+});

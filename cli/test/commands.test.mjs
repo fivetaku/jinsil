@@ -130,6 +130,7 @@ test('submit v2: 동의 없으면 안 보냄, 미리보기엔 금지 필드 없�
     assert.equal(p.account_fp, fp); assert.equal(p.tier, 'default_claude_max_5x'); assert.equal(p.client.collector, 'transcript');
     assert.ok(p.bins.length >= 1 && p.bins.every(b => b.revision && b.model === 'claude-opus-5' && Number.isInteger(b.bin_start)));
     assert.equal(p.samples.length, 6, '샘플 3건 × 게이지 2');
+    assert.equal(p.client.usage_scope, undefined, '신고 안 했으면 안 보냄');
     const wire = JSON.stringify(p);
     for (const bad of ['/Users/someone', 'msg_', 'req_', os.hostname(), 'email']) assert.ok(!wire.includes(bad), bad);
     await runAsync(['submit'], env);
@@ -140,6 +141,14 @@ test('submit v2: 동의 없으면 안 보냄, 미리보기엔 금지 필드 없�
     await runAsync(['submit'], env);
     assert.equal(got.length, 2);
     assert.equal(got[1].body.bins.length, 1, '바뀐 bin만'); assert.equal(got[1].body.samples.length, 0);
+    // 버전이 바뀌면(setup) 이 PC 기록을 전부 다시 보낸다
+    const cfgPath = path.join(env.JINSIL_HOME, 'config.json');
+    fs.writeFileSync(cfgPath, JSON.stringify({ ...JSON.parse(fs.readFileSync(cfgPath, 'utf8')), last_version: '0.0.1' }));
+    run(['setup', '--no-login', '--no-path', '--yes', '--exclusive', '--port', '10296'], { ...env, JINSIL_SERVICE_DRYRUN: '1' });
+    await runAsync(['submit'], env);
+    const again = got.at(-1).body;
+    assert.ok(again.bins.length >= 1 && again.samples.length === 6, '전부 재전송');
+    assert.equal(again.client.usage_scope, 'exclusive');
     const rep = await runAsync(['report'], env);
     assert.match(rep, /5h|7d/);
     const e1 = await runAsync(['report', '--evidence'], env), e2 = await runAsync(['report', '--evidence'], env);
