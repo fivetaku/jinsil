@@ -32,7 +32,7 @@ function flagsOf(argv) {
     if (a.startsWith('--')) {
       const [k, v] = a.slice(2).split('=');
       if (v !== undefined) out[k] = v;
-      else if (argv[i + 1] && !argv[i + 1].startsWith('--') && ['server', 'port', 'auto'].includes(k)) out[k] = argv[++i];
+      else if (argv[i + 1] && !argv[i + 1].startsWith('--') && ['server', 'port', 'auto', 'accounts'].includes(k)) out[k] = argv[++i];
       else out[k] = true;
     } else out._.push(a);
   }

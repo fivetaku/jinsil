@@ -60,3 +60,12 @@ test('계정별 게이지: 활동 계정만 조회, 목적지 경로는 profile�
   clock += 3 * 3600000; assert.equal((await s.tick(pool, act)).length, 0, '활동 끝난 뒤 30분+ 지나면 조회 안 함');
   assert.equal(lastActivityByFp({ messages: { k: { ts: 5, account_fp: 'f' } } }).get('f'), 5);
 });
+
+test('setup --accounts 값이 공백 구분으로도 저장된다', async () => {
+  const { execFileSync } = await import('node:child_process');
+  const h = fs.mkdtempSync(path.join(os.tmpdir(), 'jinsil-acc-'));
+  const env = { ...process.env, JINSIL_HOME: h, JINSIL_SERVICE_DRYRUN: '1', JINSIL_LAUNCH_AGENTS_DIR: path.join(h, 'a'), JINSIL_SYSTEMD_DIR: path.join(h, 's'),
+    JINSIL_RC_FILES: path.join(h, 'rc'), JINSIL_TEAMCLAUDE_CONFIG: cfgFile, JINSIL_TEAMCLAUDE_LOG: log };
+  execFileSync(process.execPath, [path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'bin', 'jinsil.mjs'), 'setup', '--no-login', '--no-path', '--yes', '--teamclaude', '--accounts', 'a@x', '--port', '10295'], { env, encoding: 'utf8' });
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(h, 'config.json'), 'utf8')).pool_accounts, ['a@x']);
+});
