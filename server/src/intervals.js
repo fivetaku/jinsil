@@ -43,7 +43,17 @@ export function validate(p) {
   return null;
 }
 
-export async function priceTable(env) {
+// isolate 메모리 캐시(10분). 제출마다 prices 전량(약 200행)을 읽던 것을 없앤다(09-26 D1 rows read 한도). 단가 동기화 cron 뒤에는 invalidatePriceCache.
+const PRICE_TTL_MS = 10 * 60000;
+let priceCache = null;
+export const invalidatePriceCache = () => { priceCache = null; };
+export async function priceTable(env, now = Date.now()) {
+  if (priceCache && now - priceCache.at < PRICE_TTL_MS) return priceCache.value;
+  const value = await loadPriceTable(env);
+  priceCache = { at: now, value };
+  return value;
+}
+async function loadPriceTable(env) {
   const { results } = await env.DB.prepare(`SELECT model, component, usd_per_mtok, valid_from, verified_at FROM prices ORDER BY valid_from DESC`).all();
   const table = {};
   let verified = true;

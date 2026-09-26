@@ -21,11 +21,15 @@ function quantile(sorted, q) {
 }
 const median = arr => quantile([...arr].sort((a, b) => a - b), 0.5);
 
-export async function planPrices(env) {
+// 요금제 가격은 거의 안 바뀐다 → isolate 메모리 캐시(10분).
+let planPriceCache = null;
+export async function planPrices(env, now = Date.now()) {
+  if (planPriceCache && now - planPriceCache.at < 10 * 60000) return { ...planPriceCache.value };
   const { results } = await env.DB.prepare('SELECT plan, monthly_usd FROM plan_prices ORDER BY valid_from DESC').all();
   const out = {};
   for (const r of results) if (out[r.plan] === undefined) out[r.plan] = r.monthly_usd;
-  return out;
+  planPriceCache = { at: now, value: out };
+  return { ...out };
 }
 
 export async function accountStats(env, now = Date.now()) {

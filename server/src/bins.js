@@ -63,6 +63,27 @@ export const binCost = (b, table) => {
   return COMPONENTS.reduce((s, c) => s + b[c] * p[c], 0) / 1e6;
 };
 
+const insertedPriceVersions = new Set();
+
+// 계정별 재계산 스로틀(09-26 D1 rows read 한도): 재계산 1회가 계정의 최근 9일 샘플·bin을 전부 읽으므로(제출당 약 2천 행)
+// 마지막 재계산 뒤 RECOMPUTE_MIN_INTERVAL_S(기본 600초) 안의 제출은 저장만 하고 재계산을 미룬다.
+// 창 계산 결과는 입력이 같으면 같다 — 미룬 제출분은 다음 재계산(다음 제출 또는 일 1회 cron 정리)에 그대로 반영된다.
+// 수집기는 활동 뒤 30분 동안 게이지를 계속 보내므로 사용 직후 구간도 보통 30분 안에 반영된다.
+export async function shouldRecompute(env, account_fp, now, { force = false } = {}) {
+  const min = Number(env.RECOMPUTE_MIN_INTERVAL_S ?? 600) * 1000;
+  if (force || !(min > 0)) return true;
+  const r = await env.DB.prepare('SELECT MAX(updated_at) AS t FROM windows WHERE account_fp = ?').bind(account_fp).first();
+  return !r?.t || now - r.t >= min;
+}
+
+// 일 1회 cron: 최근 26시간 안에 제출한 기기가 있는 계정은 한 번씩 재계산(미뤄진 마지막 제출분·확정 상태 반영).
+export async function recomputeRecent(env, now = Date.now()) {
+  const { results } = await env.DB.prepare(`SELECT DISTINCT a.account_fp FROM claude_accounts a JOIN devices d ON d.user_id = a.user_id
+    WHERE d.revoked_at IS NULL AND d.last_seen > ?`).bind(now - 26 * 3600000).all();
+  for (const { account_fp } of results) await recomputeAccount(env, account_fp, now);
+  return results.length;
+}
+
 // 계정의 창 다시 계산(최근 9일). 여러 기기 bin은 합산하고, 샘플은 어느 기기 것이든 쓴다.
 export async function recomputeAccount(env, account_fp, now = Date.now()) {
   const since = now - HISTORY_MS;
@@ -74,7 +95,10 @@ export async function recomputeAccount(env, account_fp, now = Date.now()) {
   // 재계산 근거: 실제 쓴 단가표 내용의 해시를 가격 버전으로 남긴다.
   const canon = JSON.stringify(Object.keys(table).sort().map(m => [m, Object.keys(table[m]).sort().map(c => [c, table[m][c]])]));
   const version = `${priceStatus === 'verified' ? 'v' : 'p'}-${(await sha256hex(canon)).slice(0, 16)}`;
-  await env.DB.prepare('INSERT OR IGNORE INTO price_versions (hash, created_at, source_url) VALUES (?, ?, ?)').bind(version, now, canon).run();
+  if (!insertedPriceVersions.has(version)) {
+    await env.DB.prepare('INSERT OR IGNORE INTO price_versions (hash, created_at, source_url) VALUES (?, ?, ?)').bind(version, now, canon).run();
+    insertedPriceVersions.add(version);
+  }
   // 같은 시각 bin을 기기 간 합산. 같은 (bin_start, 모델)을 서로 다른 기기가 똑같은 내용으로 냈다면 중복 수집(동기화 폴더 등) 의심 → 창 제외.
   const byKey = new Map(), dup = new Set();
   for (const b of bins) {
@@ -129,7 +153,7 @@ export async function submit(req, env) {
   try { p = await readJson(req, 256 * 1024); } catch (e) { return json({ status: 'rejected', reason: e.message }, e.status || 400); }
   const invalid = validate(p, now);
   if (invalid) return json({ status: 'rejected', reason: invalid }, 422);
-  const acct = await env.DB.prepare('SELECT user_id FROM claude_accounts WHERE account_fp = ?').bind(p.account_fp).first();
+  const acct = await env.DB.prepare('SELECT user_id, tier_latest FROM claude_accounts WHERE account_fp = ?').bind(p.account_fp).first();
   if (acct && acct.user_id !== device.user_id) {
     await env.DB.prepare('INSERT INTO flags (account_fp, rule, detail, created_at) VALUES (?, ?, ?, ?)').bind(p.account_fp, 'account_bound_to_other_user', device.user_id, now).run();
     return json({ status: 'rejected', reason: 'account_bound_to_other_user' }, 409);
@@ -142,7 +166,10 @@ export async function submit(req, env) {
   // 요금제 판별 방식 교정(0.2.4 이전 클라이언트는 Team 좌석을 rate_limit_tier로 기록 → Max로 오인). Team으로 확인되면
   // 그 계정의 이전 비-Team 샘플 tier를 Team으로 고쳐 써서, 판별 방식 변경이 '요금제 변경' 제외로 잡히지 않게 한다.
   // 실제 Max→Team 전환도 같이 합쳐지는 한계가 있다(드묾).
-  if (typeof p.tier === 'string' && p.tier.startsWith('team__'))
+  // Team이 처음 확인될 때(직전 기록이 Team이 아닐 때)만 실행 — 매 제출마다 계정 전 샘플을 훑지 않는다.
+  const teamNow = typeof p.tier === 'string' && p.tier.startsWith('team__');
+  const tierChanged = !!(acct && p.tier && acct.tier_latest !== p.tier);
+  if (teamNow && acct && !(acct.tier_latest || '').startsWith('team__'))
     stmts.push(env.DB.prepare(`UPDATE gauge_samples SET tier = ? WHERE account_fp = ? AND (tier IS NULL OR tier NOT LIKE 'team!_!_%' ESCAPE '!')`).bind(p.tier, p.account_fp));
   if (p.client.usage_scope) stmts.push(env.DB.prepare('UPDATE claude_accounts SET usage_scope = ? WHERE account_fp = ?').bind(p.client.usage_scope, p.account_fp));
   for (const b of p.bins) stmts.push(env.DB.prepare(`INSERT INTO usage_bins (account_fp, device_id, bin_start, model, input, output, cache_read, cache_write_5m,
@@ -155,6 +182,7 @@ export async function submit(req, env) {
   for (const s of p.samples) stmts.push(env.DB.prepare(`INSERT OR IGNORE INTO gauge_samples (account_fp, gauge, observed_at, device_id, utilization, resets_at, source, tier)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).bind(p.account_fp, s.gauge, s.observed_at, device.id, s.utilization, s.resets_at, s.source, s.tier ?? p.tier));
   for (let i = 0; i < stmts.length; i += 100) await env.DB.batch(stmts.slice(i, i + 100));
-  const windows = await recomputeAccount(env, p.account_fp, now);
-  return json({ status: 'accepted', bins: p.bins.length, samples: p.samples.length, windows }, 201);
+  const recompute = await shouldRecompute(env, p.account_fp, now, { force: !acct || tierChanged });
+  const windows = recompute ? await recomputeAccount(env, p.account_fp, now) : null;
+  return json({ status: 'accepted', bins: p.bins.length, samples: p.samples.length, windows, recompute: recompute ? 'done' : 'deferred' }, 201);
 }

@@ -15,6 +15,7 @@
     "GOOGLE_TOKEN_URL": "https://oauth2.googleapis.com/token",
     "MIN_ACCOUNTS": "3",
     "PROBATION_HOURS": "0",
+    "RECOMPUTE_MIN_INTERVAL_S": "600",
     "DEV_IDP": "0"
   },
   // GOOGLE_CLIENT_SECRET 은 wrangler secret. 로컬은 .dev.vars(모의 IdP).

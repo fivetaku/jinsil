@@ -5,6 +5,7 @@ import * as device from './device.js';
 import { syncPrices } from './pricing.js';
 import * as intervals from './intervals.js';
 import * as bins from './bins.js';
+import { invalidatePriceCache } from './intervals.js';
 import * as stats from './stats.js';
 import * as pages from './pages.js';
 import * as evidence from './evidence.js';
@@ -89,6 +90,9 @@ export default {
   async scheduled(_event, env) {
     const r = await syncPrices(env).catch(e => ({ ok: false, reason: String(e?.message || e) }));
     console.log('price_sync', JSON.stringify({ ok: r.ok, models: r.models, changed: r.changed, held: r.held?.length, missing: r.missing, reason: r.reason }));
+    invalidatePriceCache();
+    const n = await bins.recomputeRecent(env).catch(e => { console.log('recompute_recent_failed', String(e?.message || e)); return null; });
+    console.log('recompute_recent', n);
     await stats.snapshot(env);
   },
 };
