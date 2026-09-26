@@ -139,6 +139,11 @@ export async function submit(req, env) {
   if (!acct) stmts.push(env.DB.prepare('INSERT INTO claude_accounts (account_fp, user_id, tier_latest, public_tag, first_seen) VALUES (?, ?, ?, ?, ?)')
     .bind(p.account_fp, device.user_id, p.tier, p.account_fp.slice(-4), now));
   else if (p.tier) stmts.push(env.DB.prepare('UPDATE claude_accounts SET tier_latest = ? WHERE account_fp = ?').bind(p.tier, p.account_fp));
+  // 요금제 판별 방식 교정(0.2.4 이전 클라이언트는 Team 좌석을 rate_limit_tier로 기록 → Max로 오인). Team으로 확인되면
+  // 그 계정의 이전 비-Team 샘플 tier를 Team으로 고쳐 써서, 판별 방식 변경이 '요금제 변경' 제외로 잡히지 않게 한다.
+  // 실제 Max→Team 전환도 같이 합쳐지는 한계가 있다(드묾).
+  if (typeof p.tier === 'string' && p.tier.startsWith('team__'))
+    stmts.push(env.DB.prepare(`UPDATE gauge_samples SET tier = ? WHERE account_fp = ? AND (tier IS NULL OR tier NOT LIKE 'team!_!_%' ESCAPE '!')`).bind(p.tier, p.account_fp));
   if (p.client.usage_scope) stmts.push(env.DB.prepare('UPDATE claude_accounts SET usage_scope = ? WHERE account_fp = ?').bind(p.client.usage_scope, p.account_fp));
   for (const b of p.bins) stmts.push(env.DB.prepare(`INSERT INTO usage_bins (account_fp, device_id, bin_start, model, input, output, cache_read, cache_write_5m,
       cache_write_1h, cache_write_unknown, messages, sidechain_messages, special_json, revision, collector, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

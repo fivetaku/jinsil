@@ -199,3 +199,15 @@ test('혼용 의심: 같은 요금제 중앙값의 절반 미만인 창은 표�
   const w = (await meOf(jay)).windows.find(x => x.public_tag === 'adad' && x.gauge === '7d');
   assert.equal(w.exclude_reason, null); assert.equal(w.suspect_shared, true);
 });
+
+test('판별 방식 교정: Max로 잘못 기록됐던 샘플은 Team이 확인되면 Team으로 고쳐져 요금제 변경 제외가 풀린다', async () => {
+  const kim = await login(srv.base, 'kim-team');
+  const tok = (await linkDevice(srv.base, kim)).token.device_token;
+  const start = Date.now() - 10 * 3600000;
+  await postBins(srv.base, tok, windowPayload({ fp: fp('ae'), tier: 'default_claude_max_5x', delta: 3, start, g0: 10 }));
+  const second = windowPayload({ fp: fp('ae'), tier: 'team__team_labs_premium', delta: 3, start: start + 3 * 3600000, g0: 13 });
+  assert.equal((await postBins(srv.base, tok, second)).status, 201);
+  const w = (await meOf(kim)).windows.filter(x => x.public_tag === 'aeae' && x.gauge === '7d');
+  assert.ok(w.length >= 1 && w.every(x => x.exclude_reason !== 'tier_changed'), JSON.stringify(w.map(x => x.exclude_reason)));
+  assert.equal((await meOf(kim)).accounts.find(a => a.tag === 'aeae').plan, 'team_premium');
+});

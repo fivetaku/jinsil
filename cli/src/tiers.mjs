@@ -17,7 +17,7 @@ export function tierFromProfile(json) {
 }
 export function planOf(tier) {
   if (typeof tier !== 'string') return null;
-  if (tier.startsWith('team__')) return /premium/.test(tier) ? 'team_premium' : /standard/.test(tier) ? 'team_standard' : null; // 좌석 문자열 첫 실측 시 확인
+  if (tier.startsWith('team__')) return /premium/.test(tier) ? 'team_premium' : /standard/.test(tier) ? 'team_standard' : null; // 09-25 실측: Team Premium 좌석 = 'team_labs_premium'
   return Object.hasOwn(TIER_MAP, tier) ? TIER_MAP[tier] : null;
 }
 export const PLAN_LABEL = { pro: 'Pro', max5x: 'Max 5x', max20x: 'Max 20x', team_standard: 'Team Standard', team_premium: 'Team Premium' };
