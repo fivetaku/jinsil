@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { readPool, scanPoolLog, createPoolSampler, lastActivityByFp } from '../src/teamclaude.mjs';
 import { accountFingerprint } from '../src/recorder.mjs';
 import { buildBins } from '../src/bins.mjs';
@@ -66,6 +67,6 @@ test('setup --accounts 값이 공백 구분으로도 저장된다', async () => 
   const h = fs.mkdtempSync(path.join(os.tmpdir(), 'jinsil-acc-'));
   const env = { ...process.env, JINSIL_HOME: h, JINSIL_SERVICE_DRYRUN: '1', JINSIL_LAUNCH_AGENTS_DIR: path.join(h, 'a'), JINSIL_SYSTEMD_DIR: path.join(h, 's'),
     JINSIL_RC_FILES: path.join(h, 'rc'), JINSIL_TEAMCLAUDE_CONFIG: cfgFile, JINSIL_TEAMCLAUDE_LOG: log };
-  execFileSync(process.execPath, [path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'bin', 'jinsil.mjs'), 'setup', '--no-login', '--no-path', '--yes', '--teamclaude', '--accounts', 'a@x', '--port', '10295'], { env, encoding: 'utf8' });
+  execFileSync(process.execPath, [fileURLToPath(new URL('../bin/jinsil.mjs', import.meta.url)), 'setup', '--no-login', '--no-path', '--yes', '--teamclaude', '--accounts', 'a@x', '--port', '10295'], { env, encoding: 'utf8' });
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(h, 'config.json'), 'utf8')).pool_accounts, ['a@x']);
 });
